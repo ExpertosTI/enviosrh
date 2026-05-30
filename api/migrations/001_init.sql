@@ -110,13 +110,8 @@ CREATE TRIGGER deliveries_updated_at
   BEFORE UPDATE ON deliveries
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- ─── USUARIO ADMIN POR DEFECTO (cambiar contraseña al desplegar)
--- Contraseña: "cambiar123" — bcrypt hash generado con 10 rounds
-INSERT INTO users (name, email, phone, password, role)
-VALUES (
-  'Administrador',
-  'admin@enviosrh.local',
-  NULL,
-  '$2b$10$YzQ3N2E4YjFjMzQ5ZDVlO.WcLkM9fJ8kXpA6r1sQ0vT2mNuY7bHVO',
-  'operator'
-) ON CONFLICT (email) DO NOTHING;
+-- ─── USUARIO ADMIN
+-- El primer operador se crea en el arranque del API via
+-- las variables de entorno ADMIN_EMAIL y ADMIN_PASSWORD.
+-- Ver api/src/index.ts → bootstrapAdmin()
+-- No se almacenan credenciales en el repositorio.

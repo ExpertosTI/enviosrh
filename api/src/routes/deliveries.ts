@@ -101,6 +101,43 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
   return c.json({ ...delivery, customer: cust }, 201);
 });
 
+// ── Detalle de un envío ──────────────────────────────────────
+deliveries.get('/:id', auth, async (c) => {
+  const user = c.get('user');
+  const { id } = c.req.param();
+
+  const [row] = await sql`
+    SELECT
+      d.id, d.state, d.delivery_fee,
+      d.location_link, d.address_override,
+      d.assigned_at, d.delivered_at, d.created_at,
+      d.messenger_note, d.notes,
+      d.external_ref, d.external_source,
+      d.customer_confirmed, d.rating,
+      c.id    AS customer_id,
+      c.name  AS customer_name,
+      c.phone AS customer_phone,
+      c.address AS customer_address,
+      c.reference AS customer_reference,
+      u.id   AS messenger_id,
+      u.name AS messenger_name,
+      u.phone AS messenger_phone
+    FROM deliveries d
+    JOIN customers c ON c.id = d.customer_id
+    LEFT JOIN users u ON u.id = d.messenger_id
+    WHERE d.id = ${id}
+    LIMIT 1
+  `;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+
+  // Mensajero solo puede ver sus propios envíos
+  if (user.role === 'messenger' && row.messenger_id !== user.sub) {
+    return c.json({ error: 'No autorizado' }, 403);
+  }
+
+  return c.json(row);
+});
+
 // ── Detalle de envío con URLs de WhatsApp ───────────────────
 deliveries.get('/:id/share', auth, async (c) => {
   const { id } = c.req.param();

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { ShareData, Delivery, Messenger } from '../../types';
 import { STATE_LABEL, STATE_COLOR } from '../../types';
+import { IconBack, IconWhatsApp, IconCopy, IconCheck } from '../../components/Icons';
 
 export function ShareDelivery() {
   const { id } = useParams<{ id: string }>();
@@ -19,7 +20,7 @@ export function ShareDelivery() {
     if (!id) return;
     Promise.all([
       api.get<ShareData>(`/deliveries/${id}/share`),
-      api.get<Delivery[]>('/deliveries').then((all) => all.find((d) => d.id === id) ?? null),
+      api.get<Delivery>(`/deliveries/${id}`),
       api.get<Messenger[]>('/messengers'),
     ])
       .then(([s, d, m]) => {
@@ -72,7 +73,9 @@ export function ShareDelivery() {
   return (
     <div className="shell">
       <div className="shell__header">
-        <button className="back-btn" onClick={() => nav('/operador')}>‹</button>
+        <button className="back-btn" onClick={() => nav('/operador')} aria-label="Volver">
+          <IconBack size={20} />
+        </button>
         Detalle del envío
       </div>
       <div className="shell__scroll">
@@ -127,23 +130,13 @@ export function ShareDelivery() {
           <div className="card__title">Compartir por WhatsApp</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {share.whatsapp_messenger && (
-              <a
-                href={share.whatsapp_messenger}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn--wa"
-              >
-                📲 Enviar datos al mensajero
+              <a href={share.whatsapp_messenger} target="_blank" rel="noopener noreferrer" className="btn btn--wa">
+                <IconWhatsApp size={18} color="#fff" /> Enviar datos al mensajero
               </a>
             )}
             {share.whatsapp_customer && (
-              <a
-                href={share.whatsapp_customer}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn--wa"
-              >
-                📦 Enviar seguimiento al cliente
+              <a href={share.whatsapp_customer} target="_blank" rel="noopener noreferrer" className="btn btn--wa">
+                <IconWhatsApp size={18} color="#fff" /> Enviar seguimiento al cliente
               </a>
             )}
           </div>
@@ -171,7 +164,15 @@ export function ShareDelivery() {
         {delivery.rating && (
           <div className="card" style={{ textAlign: 'center' }}>
             <div className="card__title">Calificación del cliente</div>
-            <div style={{ fontSize: 24 }}>{'⭐'.repeat(delivery.rating)}</div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+              {[1,2,3,4,5].map((s) => (
+                <IconCheck
+                  key={s}
+                  size={22}
+                  color={s <= (delivery.rating ?? 0) ? '#f59e0b' : 'var(--border)'}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -195,9 +196,11 @@ function LinkCopy({ label, url, onCopy }: { label: string; url: string; onCopy: 
       <span style={{ flex: 1, fontSize: 12, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       <button
         className="btn btn--ghost btn--sm"
+        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         onClick={() => { onCopy(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
       >
-        {copied ? '✓' : 'Copiar'}
+        {copied ? <IconCheck size={14} color="var(--success)" /> : <IconCopy size={14} />}
+        {copied ? 'Copiado' : 'Copiar'}
       </button>
     </div>
   );
