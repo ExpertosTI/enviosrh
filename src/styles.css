@@ -1,0 +1,259 @@
+/* ── enviosrh — Design System ────────────────────────────────── */
+:root {
+  --bg:       #0f0f1a;
+  --surface:  #1a1a2e;
+  --card:     #16213e;
+  --border:   #2d2d4e;
+  --primary:  #4f80ff;
+  --primary-d:#3a68e0;
+  --text:     #e8e8f0;
+  --text-2:   #9898b0;
+  --danger:   #e05555;
+  --success:  #22c55e;
+  --warn:     #f59e0b;
+  --radius:   10px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout shell ─────────────────────────────────────────── */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.shell__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.shell__header .back-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.shell__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.shell__footer {
+  padding: 12px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+/* ── Cards ────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.card__title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-2);
+  margin-bottom: 12px;
+}
+
+/* ── Estado badge ─────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge--draft      { background:#2d2d4e; color:#9898b0; }
+.badge--assigned   { background:#1d3461; color:#7caeff; }
+.badge--in_transit { background:#3d2200; color:#f59e0b; }
+.badge--delivered  { background:#0d3320; color:#22c55e; }
+.badge--cancelled  { background:#3d0d0d; color:#e05555; }
+
+/* ── Botones ──────────────────────────────────────────────── */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 16px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn--primary  { background: var(--primary); color: #fff; }
+.btn--primary:hover:not(:disabled)  { background: var(--primary-d); }
+.btn--success  { background: var(--success); color: #fff; }
+.btn--danger   { background: var(--danger); color: #fff; }
+.btn--ghost    { background: var(--border); color: var(--text); }
+.btn--sm       { padding: 8px 14px; font-size: 13px; width: auto; }
+.btn--wa       { background: #25d366; color: #fff; }
+
+/* ── Inputs ───────────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 13px; color: var(--text-2); font-weight: 500; }
+.field input,
+.field select,
+.field textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 15px;
+  padding: 10px 12px;
+  width: 100%;
+  outline: none;
+  transition: border-color .15s;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus { border-color: var(--primary); }
+.field textarea { resize: vertical; min-height: 72px; }
+
+/* ── Delivery list item ───────────────────────────────────── */
+.ditem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color .15s;
+}
+.ditem:hover { border-color: var(--primary); }
+
+.ditem__body { flex: 1; min-width: 0; }
+.ditem__name { font-weight: 600; font-size: 15px; }
+.ditem__sub  { font-size: 13px; color: var(--text-2); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ditem__meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+/* ── Login ────────────────────────────────────────────────── */
+.login-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  gap: 24px;
+}
+
+.login-page .logo {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: -.02em;
+}
+
+.login-form {
+  width: 100%;
+  max-width: 380px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Error / Info banners ─────────────────────────────────── */
+.banner {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.banner--error   { background: #3d0d0d; color: #ef4444; border: 1px solid #7f1d1d; }
+.banner--success { background: #0d3320; color: #22c55e; border: 1px solid #14532d; }
+.banner--info    { background: #1d2d4e; color: #93c5fd; border: 1px solid #1e3a5f; }
+
+/* ── Star rating ──────────────────────────────────────────── */
+.stars { display: flex; gap: 8px; }
+.star  { font-size: 28px; cursor: pointer; opacity: .35; transition: opacity .1s; }
+.star--active { opacity: 1; }
+
+/* ── Nav actions (mensajero) ──────────────────────────────── */
+.nav-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ── Loading spinner ──────────────────────────────────────── */
+.spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+/* ── Customer portal ──────────────────────────────────────── */
+.portal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100%;
+  padding: 32px 20px;
+  gap: 20px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.portal__logo { font-size: 22px; font-weight: 800; color: var(--primary); }
+
+.status-icon { font-size: 56px; line-height: 1; }
+
+.status-card {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+}
+.status-card__title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.status-card__sub   { color: var(--text-2); font-size: 14px; }
+
+.divider { width: 100%; height: 1px; background: var(--border); }

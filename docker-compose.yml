@@ -1,0 +1,132 @@
+# ── enviosrh — Docker Swarm + Traefik ────────────────────────
+#  Stack:    enviosrh
+#  Domain:   ${DOMAIN:-enviosrh.renace.tech}
+#  Network:  RenaceNet (overlay externa)
+#  Cert:     letsencryptresolver
+
+services:
+
+  # ── Base de datos ───────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-enviosrh}
+      POSTGRES_USER: ${POSTGRES_USER:-enviosrh_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - RenaceNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "0.30"
+          memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-enviosrh_user} -d ${POSTGRES_DB:-enviosrh}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API backend ─────────────────────────────────────────────
+  api:
+    image: enviosrh-api:latest
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-enviosrh_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-enviosrh}
+      JWT_SECRET: ${JWT_SECRET}
+      COMPANY_NAME: ${COMPANY_NAME:-Empresa}
+      COMPANY_PHONE: ${COMPANY_PHONE:-}
+      APP_URL: https://${DOMAIN:-enviosrh.renace.tech}
+    depends_on:
+      - db
+    networks:
+      - RenaceNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=RenaceNet
+        # API: enviosrh.renace.tech/api
+        - traefik.http.routers.enviosrh-api.rule=Host(`${DOMAIN:-enviosrh.renace.tech}`) && PathPrefix(`/api`)
+        - traefik.http.routers.enviosrh-api.entrypoints=websecure
+        - traefik.http.routers.enviosrh-api.tls=true
+        - traefik.http.routers.enviosrh-api.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.enviosrh-api.service=enviosrh-api-svc
+        - traefik.http.services.enviosrh-api-svc.loadbalancer.server.port=3000
+        # Strip /api prefix
+        - traefik.http.middlewares.enviosrh-strip-api.stripprefix.prefixes=/api
+        - traefik.http.routers.enviosrh-api.middlewares=enviosrh-strip-api
+        # Portal público: /p/ (tracking cliente, confirmación mensajero)
+        - traefik.http.routers.enviosrh-portal.rule=Host(`${DOMAIN:-enviosrh.renace.tech}`) && PathPrefix(`/p/`)
+        - traefik.http.routers.enviosrh-portal.entrypoints=websecure
+        - traefik.http.routers.enviosrh-portal.tls=true
+        - traefik.http.routers.enviosrh-portal.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.enviosrh-portal.service=enviosrh-api-svc
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Frontend PWA ────────────────────────────────────────────
+  web:
+    image: enviosrh-web:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    networks:
+      - RenaceNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "0.30"
+          memory: 128M
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=RenaceNet
+        # HTTP → HTTPS
+        - traefik.http.routers.enviosrh-http.rule=Host(`${DOMAIN:-enviosrh.renace.tech}`)
+        - traefik.http.routers.enviosrh-http.entrypoints=web
+        - traefik.http.routers.enviosrh-http.middlewares=enviosrh-https-redirect
+        - traefik.http.middlewares.enviosrh-https-redirect.redirectscheme.scheme=https
+        - traefik.http.middlewares.enviosrh-https-redirect.redirectscheme.permanent=true
+        # HTTPS
+        - traefik.http.routers.enviosrh-web.rule=Host(`${DOMAIN:-enviosrh.renace.tech}`)
+        - traefik.http.routers.enviosrh-web.entrypoints=websecure
+        - traefik.http.routers.enviosrh-web.tls=true
+        - traefik.http.routers.enviosrh-web.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.enviosrh-web.service=enviosrh-web-svc
+        - traefik.http.routers.enviosrh-web.middlewares=enviosrh-security
+        - traefik.http.services.enviosrh-web-svc.loadbalancer.server.port=80
+        - traefik.http.services.enviosrh-web-svc.loadbalancer.healthcheck.path=/healthz
+        # Security headers
+        - traefik.http.middlewares.enviosrh-security.headers.stsSeconds=31536000
+        - traefik.http.middlewares.enviosrh-security.headers.stsIncludeSubdomains=true
+        - traefik.http.middlewares.enviosrh-security.headers.contentTypeNosniff=true
+        - traefik.http.middlewares.enviosrh-security.headers.frameDeny=true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  db_data:
+
+networks:
+  RenaceNet:
+    external: true
