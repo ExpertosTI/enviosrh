@@ -26,6 +26,7 @@ export interface Delivery {
   created_at: string;
   customer_confirmed: boolean;
   rating: number | null;
+  delivery_note: string | null;
   customer_id: string;
   customer_name: string;
   customer_phone: string;
@@ -47,6 +48,9 @@ export interface ShareData {
   messenger_token_url: string;
   whatsapp_customer: string | null;
   whatsapp_messenger: string | null;
+  /** Aliases usados en la vista */
+  tracking_url?: string;
+  whatsapp_url?: string;
 }
 
 export interface Messenger {

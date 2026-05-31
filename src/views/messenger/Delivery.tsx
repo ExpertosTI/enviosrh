@@ -1,16 +1,27 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
-import type { Delivery } from '../../types';
-import { STATE_LABEL, STATE_COLOR } from '../../types';
-import { IconBack, IconMap, IconMotorbike, IconCheck, IconNavigate } from '../../components/Icons';
+import type { Delivery, DeliveryState } from '../../types';
+import { AppShell, PageHeader } from '../../components/AppShell';
+import { IconMap, IconMotorbike, IconCheck, IconNavigate, IconPackage } from '../../components/Icons';
+
+function NavBtn({ href, icon, label, color }: { href: string; icon: React.ReactNode; label: string; color: string }) {
+  return (
+    <a
+      href={href} target="_blank" rel="noreferrer"
+      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[.97]"
+      style={{ background: color + '20', color }}
+    >
+      {icon}{label}
+    </a>
+  );
+}
 
 export function MessengerDelivery() {
   const { id } = useParams<{ id: string }>();
-  const nav = useNavigate();
   const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [error, setError] = useState('');
-  const [working, setWorking] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [note, setNote] = useState('');
 
   useEffect(() => {
@@ -22,141 +33,143 @@ export function MessengerDelivery() {
 
   async function markInTransit() {
     if (!id) return;
-    setWorking(true);
+    setLoading(true); setError('');
     try {
-      await api.patch(`/deliveries/${id}/in-transit`);
-      setDelivery((d) => d ? { ...d, state: 'in_transit' } : d);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error');
-    } finally {
-      setWorking(false);
-    }
+      await api.patch(`/deliveries/${id}`, { state: 'in_transit' });
+      setDelivery((p) => p ? { ...p, state: 'in_transit' as DeliveryState } : p);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
+    finally { setLoading(false); }
   }
 
   async function markDelivered() {
     if (!id) return;
-    setWorking(true);
+    setLoading(true); setError('');
     try {
-      await api.patch(`/deliveries/${id}/deliver`, { messenger_note: note || undefined });
-      setDelivery((d) => d ? { ...d, state: 'delivered' } : d);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error');
-    } finally {
-      setWorking(false);
-    }
+      await api.patch(`/deliveries/${id}`, { state: 'delivered', delivery_note: note || undefined });
+      setDelivery((p) => p ? { ...p, state: 'delivered' as DeliveryState } : p);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
+    finally { setLoading(false); }
   }
 
   if (!delivery) {
-    return <div className="spinner">{error || 'Cargando…'}</div>;
+    return (
+      <AppShell>
+        {error ? <div className="p-6"><div className="banner-error">{error}</div></div> : <div className="spinner" />}
+      </AppShell>
+    );
   }
 
-  const state = delivery.state as keyof typeof STATE_LABEL;
-  const address = delivery.address_override ?? delivery.customer_address ?? '';
-  const q = encodeURIComponent(
-    delivery.location_link && delivery.location_link.startsWith('http')
-      ? delivery.location_link
-      : address
-  );
-  const navGoogle = delivery.location_link?.startsWith('http')
+  const gpsCoords = delivery.location_link?.match(/[-\d.]+,[-\d.]+/)?.[0];
+  const mapsUrl = delivery.location_link?.startsWith('http')
     ? delivery.location_link
-    : `https://www.google.com/maps/search/?api=1&query=${q}`;
-  const navWaze = `https://waze.com/ul?q=${q}&navigate=yes`;
+    : gpsCoords ? `https://www.google.com/maps/search/?api=1&query=${gpsCoords}` : null;
+  const wazeUrl = gpsCoords ? `https://waze.com/ul?ll=${gpsCoords}&navigate=yes` : null;
+
+  const isAssigned  = delivery.state === 'assigned';
+  const isInTransit = delivery.state === 'in_transit';
+  const isDelivered = delivery.state === 'delivered';
 
   return (
-    <div className="shell">
-      <div className="shell__header">
-        <button className="back-btn" onClick={() => nav('/mensajero')} aria-label="Volver">
-          <IconBack size={20} />
-        </button>
-        Envío
-        <span
-          className={`badge badge--${state}`}
-          style={{ marginLeft: 'auto', color: STATE_COLOR[state] }}
-        >
-          {STATE_LABEL[state]}
-        </span>
-      </div>
+    <AppShell>
+      <PageHeader title="Detalle del envío" back="/mensajero" />
 
-      <div className="shell__scroll">
-        {error && <div className="banner banner--error">{error}</div>}
+      <div className="p-4 md:p-6 max-w-lg mx-auto flex flex-col gap-5 pb-10">
+        {error && <div className="banner-error">{error}</div>}
 
-        {/* Cliente */}
-        <div className="card">
-          <div className="card__title">Destino</div>
-          <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{delivery.customer_name}</div>
-          <div style={{ color: 'var(--text-2)', fontSize: 14 }}>{address}</div>
-          {delivery.customer_reference && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-2)', fontSize: 13, marginTop: 4 }}>
-              <IconNavigate size={14} /> {delivery.customer_reference}
+        {/* Card principal */}
+        <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-[#5b8af9]/15 flex items-center justify-center">
+              <IconPackage size={20} color="#5b8af9" />
             </div>
-          )}
-          {delivery.delivery_fee > 0 && (
-            <div style={{ marginTop: 10, fontWeight: 700, fontSize: 16 }}>
-              Cobrar: ${delivery.delivery_fee.toFixed(2)}
+            <div>
+              <div className="font-bold text-[#e8e8f4]">{delivery.customer_name ?? 'Cliente'}</div>
+              {delivery.customer_phone && (
+                <a href={`tel:${delivery.customer_phone}`} className="text-xs text-[#5b8af9] hover:underline">
+                  {delivery.customer_phone}
+                </a>
+              )}
             </div>
-          )}
-          {delivery.notes && (
-            <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--surface)', borderRadius: 6, fontSize: 13, color: 'var(--text-2)' }}>
-              {delivery.notes}
-            </div>
-          )}
-        </div>
+          </div>
 
-        {/* Navegación */}
-        <div className="card">
-          <div className="card__title">Navegar</div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <a href={navGoogle} target="_blank" rel="noopener noreferrer" className="btn btn--primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <IconMap size={18} /> Google Maps
-            </a>
-            <a href={navWaze} target="_blank" rel="noopener noreferrer" className="btn btn--ghost" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <IconMap size={18} /> Waze
-            </a>
+          <div className="flex flex-col gap-3">
+            {(delivery.customer_address ?? delivery.address_override) && (
+              <div className="p-3 bg-[#0b0b14] rounded-xl">
+                <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wide mb-1">Dirección</div>
+                <div className="text-sm text-[#e8e8f4]">{delivery.customer_address ?? delivery.address_override}</div>
+              </div>
+            )}
+            {delivery.customer_reference && (
+              <div className="p-3 bg-[#0b0b14] rounded-xl">
+                <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wide mb-1">Referencia</div>
+                <div className="text-sm text-[#e8e8f4]">{delivery.customer_reference}</div>
+              </div>
+            )}
+            {delivery.notes && (
+              <div className="p-3 bg-[#2a1800]/40 rounded-xl border border-[#f59e0b]/20">
+                <div className="text-[10px] text-[#f59e0b] uppercase tracking-wide mb-1">Notas del operador</div>
+                <div className="text-sm text-[#e8e8f4]">{delivery.notes}</div>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Navegación */}
+        {(mapsUrl || wazeUrl) && (
+          <div className="flex flex-col gap-2">
+            <div className="text-xs text-[#6b6b8a] font-semibold uppercase tracking-wide px-1">Navegación</div>
+            <div className="flex gap-2">
+              {mapsUrl && <NavBtn href={mapsUrl} icon={<IconMap size={16} />} label="Google Maps" color="#4285F4" />}
+              {wazeUrl && <NavBtn href={wazeUrl} icon={<IconNavigate size={16} />} label="Waze" color="#35CAED" />}
+            </div>
+          </div>
+        )}
+
         {/* Acciones */}
-        {state === 'assigned' && (
+        {isAssigned && (
           <button
-            className="btn btn--primary"
             onClick={markInTransit}
-            disabled={working}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#f59e0b]/15 text-[#f59e0b] font-bold text-base hover:bg-[#f59e0b]/25 active:scale-[.98] transition-all disabled:opacity-40 border-0 cursor-pointer"
           >
             <IconMotorbike size={20} />
-            {working ? 'Procesando…' : 'Iniciar entrega'}
+            {loading ? 'Actualizando…' : 'Salir a entregar'}
           </button>
         )}
 
-        {state === 'in_transit' && (
-          <div className="card">
-            <div className="card__title">Confirmar entrega</div>
-            <div className="field" style={{ marginBottom: 12 }}>
-              <label>Nota (opcional)</label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Ej. Se entregó a familiar…"
-              />
-            </div>
+        {isInTransit && (
+          <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-5 flex flex-col gap-4">
+            <div className="text-sm font-bold text-[#e8e8f4]">Confirmar entrega</div>
+            <textarea
+              className="w-full bg-[#0b0b14] border border-[#252540] rounded-xl px-4 py-3 text-[#e8e8f4] text-sm outline-none focus:border-[#22c55e] focus:ring-1 focus:ring-[#22c55e]/30 resize-none placeholder:text-[#6b6b8a]"
+              placeholder="Nota de entrega (opcional)…"
+              rows={3}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
             <button
-              className="btn btn--success"
               onClick={markDelivered}
-              disabled={working}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#22c55e]/15 text-[#22c55e] font-bold text-base hover:bg-[#22c55e]/25 active:scale-[.98] transition-all disabled:opacity-40 border-0 cursor-pointer"
             >
               <IconCheck size={20} />
-              {working ? 'Procesando…' : 'Marcar como entregado'}
+              {loading ? 'Marcando…' : 'Marcar como entregado'}
             </button>
           </div>
         )}
 
-        {state === 'delivered' && (
-          <div className="banner banner--success" style={{ textAlign: 'center', padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-            <IconCheck size={20} color="var(--success)" /> Entrega confirmada
+        {isDelivered && (
+          <div className="flex flex-col items-center gap-2 py-6">
+            <div className="w-14 h-14 rounded-2xl bg-[#22c55e]/15 flex items-center justify-center">
+              <IconCheck size={28} color="#22c55e" />
+            </div>
+            <div className="font-bold text-[#22c55e]">¡Entregado!</div>
+            {delivery.delivery_note && (
+              <div className="text-xs text-[#6b6b8a] text-center">{delivery.delivery_note}</div>
+            )}
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

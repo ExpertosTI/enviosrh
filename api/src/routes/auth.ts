@@ -34,8 +34,9 @@ auth.post('/login', async (c) => {
     return c.json({ error: 'Demasiados intentos. Espera 15 minutos.' }, 429);
   }
 
-  const body = await c.req.json<{ email?: string; password?: string }>().catch(() => ({}));
-  const { email, password } = body;
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const email = typeof body.email === 'string' ? body.email : undefined;
+  const password = typeof body.password === 'string' ? body.password : undefined;
 
   if (!email || !password) {
     return c.json({ error: 'Email y contraseña requeridos' }, 400);

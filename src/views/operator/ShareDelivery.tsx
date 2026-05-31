@@ -1,207 +1,249 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
-import type { ShareData, Delivery, Messenger } from '../../types';
-import { STATE_LABEL, STATE_COLOR } from '../../types';
-import { IconBack, IconWhatsApp, IconCopy, IconCheck } from '../../components/Icons';
+import type { Delivery, DeliveryState, ShareData, Messenger } from '../../types';
+import { STATE_LABEL } from '../../types';
+import { AppShell, PageHeader } from '../../components/AppShell';
+import {
+  IconWhatsApp, IconCopy, IconCheck, IconUser, IconMotorbike, IconPackage, IconMap, IconStar,
+} from '../../components/Icons';
+
+const BADGE_BG: Record<DeliveryState, string> = {
+  draft:      'bg-[#1a1a30] text-[#6b6b8a]',
+  assigned:   'bg-[#0f2040] text-[#7caeff]',
+  in_transit: 'bg-[#2a1800] text-[#f59e0b]',
+  delivered:  'bg-[#0a2a18] text-[#22c55e]',
+  cancelled:  'bg-[#2a0a0a] text-[#ef4444]',
+};
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button
+      onClick={copy}
+      className={[
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border-0 cursor-pointer transition-all',
+        copied
+          ? 'bg-[#22c55e]/15 text-[#22c55e]'
+          : 'bg-[#252540] text-[#6b6b8a] hover:text-[#e8e8f4] hover:bg-[#2f2f50]',
+      ].join(' ')}
+    >
+      {copied ? <><IconCheck size={13} /> Copiado!</> : <><IconCopy size={13} /> {label}</>}
+    </button>
+  );
+}
+
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start gap-3">
+      <div className="w-7 h-7 rounded-lg bg-[#252540] flex items-center justify-center shrink-0 mt-0.5">
+        {icon}
+      </div>
+      <div>
+        <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wide">{label}</div>
+        <div className="text-sm text-[#e8e8f4] mt-0.5">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function Stars({ rating }: { rating: number }) {
+  return (
+    <div className="flex gap-0.5">
+      {[1,2,3,4,5].map((s) => (
+        <IconStar key={s} size={16} color={s <= rating ? '#f59e0b' : '#252540'} />
+      ))}
+    </div>
+  );
+}
 
 export function ShareDelivery() {
   const { id } = useParams<{ id: string }>();
-  const nav = useNavigate();
-  const [share, setShare] = useState<ShareData | null>(null);
   const [delivery, setDelivery] = useState<Delivery | null>(null);
+  const [share, setShare] = useState<ShareData | null>(null);
   const [messengers, setMessengers] = useState<Messenger[]>([]);
-  const [selMessenger, setSelMessenger] = useState('');
-  const [error, setError] = useState('');
+  const [selectedMsn, setSelectedMsn] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!id) return;
-    Promise.all([
-      api.get<ShareData>(`/deliveries/${id}/share`),
-      api.get<Delivery>(`/deliveries/${id}`),
-      api.get<Messenger[]>('/messengers'),
-    ])
-      .then(([s, d, m]) => {
-        setShare(s);
-        setDelivery(d);
-        setMessengers(m);
-        setSelMessenger(d?.messenger_id ?? '');
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Error'));
-  }, [id]);
-
-  async function handleAssign() {
-    if (!selMessenger || !id) return;
-    setAssigning(true);
     try {
-      await api.patch(`/deliveries/${id}/assign`, { messenger_id: selMessenger });
-      const s = await api.get<ShareData>(`/deliveries/${id}/share`);
+      const [d, s, ms] = await Promise.all([
+        api.get<Delivery>(`/deliveries/${id}`),
+        api.get<ShareData>(`/deliveries/${id}/share`),
+        api.get<Messenger[]>('/messengers'),
+      ]);
+      setDelivery(d);
       setShare(s);
+      setMessengers(ms);
+      setSelectedMsn(d.messenger_id ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
-    } finally {
-      setAssigning(false);
     }
+  }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleAssign() {
+    if (!id) return;
+    setAssigning(true); setError(''); setSuccess('');
+    try {
+      await api.patch(`/deliveries/${id}`, { messenger_id: selectedMsn || null });
+      setSuccess(selectedMsn ? 'Mensajero asignado' : 'Mensajero removido');
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    } finally { setAssigning(false); }
   }
 
   async function handleCancel() {
-    if (!id) return;
-    if (!confirm('¿Cancelar este envío?')) return;
-    setCancelling(true);
+    if (!id || !confirm('¿Cancelar este envío?')) return;
+    setCancelling(true); setError('');
     try {
-      await api.patch(`/deliveries/${id}/cancel`);
-      nav('/operador');
+      await api.patch(`/deliveries/${id}`, { state: 'cancelled' });
+      load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
-    } finally {
-      setCancelling(false);
-    }
+    } finally { setCancelling(false); }
   }
 
-  function copyLink(url: string) {
-    navigator.clipboard.writeText(url);
+  if (!delivery || !share) {
+    return (
+      <AppShell>
+        {error ? (
+          <div className="p-6"><div className="banner-error">{error}</div></div>
+        ) : (
+          <div className="spinner" />
+        )}
+      </AppShell>
+    );
   }
 
-  if (!share || !delivery) {
-    return <div className="spinner">{error || 'Cargando…'}</div>;
-  }
-
-  const isClosed = delivery.state === 'delivered' || delivery.state === 'cancelled';
+  const waLink = share.whatsapp_customer;
+  const portalUrl = share.customer_token_url;
+  const isCancelled = delivery.state === 'cancelled';
 
   return (
-    <div className="shell">
-      <div className="shell__header">
-        <button className="back-btn" onClick={() => nav('/operador')} aria-label="Volver">
-          <IconBack size={20} />
-        </button>
-        Detalle del envío
-      </div>
-      <div className="shell__scroll">
-        {error && <div className="banner banner--error">{error}</div>}
+    <AppShell>
+      <PageHeader title="Detalle del envío" back="/operador" />
 
-        {/* Estado */}
-        <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 6 }}>Estado</div>
-          <span
-            className={`badge badge--${delivery.state}`}
-            style={{ fontSize: 15, padding: '6px 18px', color: STATE_COLOR[delivery.state] }}
-          >
-            {STATE_LABEL[delivery.state]}
-          </span>
+      <div className="p-4 md:p-6 max-w-2xl mx-auto flex flex-col gap-5 pb-10">
+        {error && <div className="banner-error">{error}</div>}
+        {success && <div className="banner-success">{success}</div>}
+
+        {/* Estado + cliente */}
+        <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-[#5b8af9]/15 flex items-center justify-center">
+              <IconPackage size={20} color="#5b8af9" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-[#e8e8f4]">{delivery.customer_name ?? 'Cliente'}</span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${BADGE_BG[delivery.state as DeliveryState]}`}>
+                  {STATE_LABEL[delivery.state as DeliveryState]}
+                </span>
+              </div>
+              <div className="text-xs text-[#6b6b8a] mt-0.5">#{delivery.id.slice(0,8).toUpperCase()}</div>
+            </div>
+            {delivery.rating && (
+              <div className="shrink-0">
+                <Stars rating={delivery.rating} />
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <InfoRow icon={<IconUser size={15} color="#6b6b8a" />} label="Teléfono" value={delivery.customer_phone} />
+            <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Dirección" value={delivery.customer_address ?? delivery.address_override} />
+            {delivery.customer_reference && (
+              <InfoRow icon={<IconMap size={15} color="#6b6b8a" />} label="Referencia" value={delivery.customer_reference} />
+            )}
+            {delivery.notes && (
+              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Notas" value={delivery.notes} />
+            )}
+            {delivery.delivery_fee > 0 && (
+              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Costo envío" value={`$${delivery.delivery_fee.toFixed(2)}`} />
+            )}
+          </div>
         </div>
 
-        {/* Cliente */}
-        <div className="card">
-          <div className="card__title">Cliente</div>
-          <Row label="Nombre" value={delivery.customer_name} />
-          <Row label="Teléfono" value={delivery.customer_phone} />
-          {delivery.customer_address && <Row label="Dirección" value={delivery.customer_address} />}
-          {delivery.delivery_fee > 0 && (
-            <Row label="Costo de envío" value={`$${delivery.delivery_fee.toFixed(2)}`} />
+        {/* Links de portal */}
+        <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-5">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#252540]">
+            <IconWhatsApp size={18} color="#25D366" />
+            <span className="text-sm font-bold text-[#e8e8f4]">Compartir con cliente</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {waLink && (
+              <a href={waLink} target="_blank" rel="noreferrer"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#25D366]/15 text-[#25D366] text-sm font-semibold hover:bg-[#25D366]/25 transition-colors">
+                <IconWhatsApp size={16} /> Enviar por WhatsApp
+              </a>
+            )}
+            {portalUrl && <CopyButton text={portalUrl} label="Copiar link" />}
+          </div>
+          {portalUrl && (
+            <div className="mt-3 p-3 bg-[#0b0b14] rounded-lg">
+              <div className="text-[10px] text-[#6b6b8a] mb-1">Link de seguimiento</div>
+              <div className="text-xs text-[#5b8af9] break-all">{portalUrl}</div>
+            </div>
           )}
         </div>
 
-        {/* Asignación */}
-        {!isClosed && (
-          <div className="card">
-            <div className="card__title">Mensajero</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* Asignar mensajero */}
+        {!isCancelled && (
+          <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-5">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#252540]">
+              <IconMotorbike size={18} color="#5b8af9" />
+              <span className="text-sm font-bold text-[#e8e8f4]">Mensajero</span>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
               <select
-                style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '10px 12px', fontSize: 15 }}
-                value={selMessenger}
-                onChange={(e) => setSelMessenger(e.target.value)}
+                value={selectedMsn}
+                onChange={(e) => setSelectedMsn(e.target.value)}
+                aria-label="Seleccionar mensajero"
+                className="flex-1 bg-[#13131f] border border-[#252540] rounded-xl px-4 py-3 text-[#e8e8f4] text-sm outline-none focus:border-[#5b8af9] focus:ring-1 focus:ring-[#5b8af9]/30"
               >
                 <option value="">— Sin asignar —</option>
-                {messengers.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
+                {messengers.filter((m) => m.active).map((m) => (
+                  <option key={m.id} value={m.id}>{m.name} – {m.phone}</option>
                 ))}
               </select>
-              <button className="btn btn--primary btn--sm" onClick={handleAssign} disabled={assigning || !selMessenger}>
-                {assigning ? '…' : 'Asignar'}
+              <button
+                onClick={handleAssign}
+                disabled={assigning}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#5b8af9] text-white text-sm font-semibold hover:bg-[#3a68e0] disabled:opacity-40 transition-colors border-0 cursor-pointer shrink-0"
+              >
+                {assigning ? 'Guardando…' : <><IconCheck size={16} /> Asignar</>}
               </button>
             </div>
           </div>
         )}
 
-        {/* WhatsApp links */}
-        <div className="card">
-          <div className="card__title">Compartir por WhatsApp</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {share.whatsapp_messenger && (
-              <a href={share.whatsapp_messenger} target="_blank" rel="noopener noreferrer" className="btn btn--wa">
-                <IconWhatsApp size={18} color="#fff" /> Enviar datos al mensajero
-              </a>
-            )}
-            {share.whatsapp_customer && (
-              <a href={share.whatsapp_customer} target="_blank" rel="noopener noreferrer" className="btn btn--wa">
-                <IconWhatsApp size={18} color="#fff" /> Enviar seguimiento al cliente
-              </a>
-            )}
-          </div>
-        </div>
-
-        {/* Links directos */}
-        <div className="card">
-          <div className="card__title">Links de seguimiento</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <LinkCopy label="Link del cliente" url={share.customer_token_url} onCopy={copyLink} />
-            {share.messenger_token_url && (
-              <LinkCopy label="Link del mensajero" url={share.messenger_token_url} onCopy={copyLink} />
-            )}
-          </div>
-        </div>
-
-        {/* Acciones */}
-        {!isClosed && (
-          <button className="btn btn--danger" onClick={handleCancel} disabled={cancelling}>
-            {cancelling ? 'Cancelando…' : 'Cancelar envío'}
-          </button>
-        )}
-
-        {/* Calificación */}
-        {delivery.rating && (
-          <div className="card" style={{ textAlign: 'center' }}>
-            <div className="card__title">Calificación del cliente</div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
-              {[1,2,3,4,5].map((s) => (
-                <IconCheck
-                  key={s}
-                  size={22}
-                  color={s <= (delivery.rating ?? 0) ? '#f59e0b' : 'var(--border)'}
-                />
-              ))}
-            </div>
+        {/* Acciones peligrosas */}
+        {!isCancelled && (
+          <div className="flex justify-end">
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-transparent border border-[#ef4444]/40 text-[#ef4444] text-sm font-semibold hover:bg-[#ef4444]/10 disabled:opacity-40 transition-colors cursor-pointer"
+            >
+              {cancelling ? 'Cancelando…' : 'Cancelar envío'}
+            </button>
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
-      <span style={{ color: 'var(--text-2)' }}>{label}</span>
-      <span style={{ fontWeight: 500 }}>{value}</span>
-    </div>
-  );
-}
-
-function LinkCopy({ label, url, onCopy }: { label: string; url: string; onCopy: (u: string) => void }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ flex: 1, fontSize: 12, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      <button
-        className="btn btn--ghost btn--sm"
-        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-        onClick={() => { onCopy(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-      >
-        {copied ? <IconCheck size={14} color="var(--success)" /> : <IconCopy size={14} />}
-        {copied ? 'Copiado' : 'Copiar'}
-      </button>
-    </div>
+    </AppShell>
   );
 }

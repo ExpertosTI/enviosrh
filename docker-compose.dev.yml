@@ -1,0 +1,60 @@
+# ── enviosrh — Desarrollo local ─────────────────────────────
+# Uso: docker compose -f docker-compose.dev.yml up --build
+#
+# Puertos expuestos:
+#   5173  → frontend Vite (hot-reload)
+#   3000  → API Hono.js
+#   5432  → Postgres (opcional, para clients externos)
+
+services:
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: enviosrh
+      POSTGRES_USER: enviosrh
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enviosrh -d enviosrh"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://enviosrh:devpassword@db:5432/enviosrh
+      JWT_SECRET: dev_secret_32_chars_minimo_local_ok
+      ADMIN_EMAIL: admin@local.dev
+      ADMIN_PASSWORD: Admin1234!
+      COMPANY_NAME: EnvíosRH Dev
+      COMPANY_PHONE: ""
+      APP_URL: http://localhost:5173
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  db_dev:
