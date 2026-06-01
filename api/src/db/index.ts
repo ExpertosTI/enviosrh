@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,8 +16,12 @@ export default sql;
 
 /** Ejecuta las migraciones al arrancar */
 export async function runMigrations() {
-  const migrationPath = join(__dirname, '../../migrations/001_init.sql');
-  const migrationSQL = readFileSync(migrationPath, 'utf-8');
-  await sql.unsafe(migrationSQL);
-  console.log('[db] Migraciones aplicadas.');
+  const migrationsDir = join(__dirname, '../../migrations');
+  const files = readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+  
+  for (const file of files) {
+    const migrationSQL = readFileSync(join(migrationsDir, file), 'utf-8');
+    await sql.unsafe(migrationSQL);
+  }
+  console.log(`[db] ${files.length} migraciones aplicadas.`);
 }
