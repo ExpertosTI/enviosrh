@@ -1,6 +1,7 @@
 /** Cliente HTTP centralizado — apunta a /api en producción y al proxy de Vite en dev */
 
-const BASE = import.meta.env.VITE_API_URL ?? '/api';
+// En producción (Traefik) la API siempre está bajo /api
+const BASE = '/api';
 
 function getToken(): string | null {
   return localStorage.getItem('enviosrh_token');
