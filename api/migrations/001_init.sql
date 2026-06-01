@@ -106,6 +106,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS deliveries_updated_at ON deliveries;
 CREATE TRIGGER deliveries_updated_at
   BEFORE UPDATE ON deliveries
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
