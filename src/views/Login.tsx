@@ -104,12 +104,12 @@ export function Login() {
               ) : 'Entrar'}
             </button>
 
-            <p className="text-center text-sm text-[#6b6b8a] mt-2">
-              ¿No tienes cuenta?{' '}
-              <Link to="/register" className="text-[#5b8af9] hover:text-[#7ba0fa] font-medium transition-colors">
-                Regístrate
-              </Link>
-            </p>
+            <Link 
+              to="/register" 
+              className="mt-1 w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-transparent border border-[#3a3a58] text-[#e8e8f4] font-semibold text-sm hover:bg-[#1f1f3a] active:scale-[.98] transition-all cursor-pointer text-decoration-none"
+            >
+              Regístrate
+            </Link>
           </form>
         </div>
       </div>
