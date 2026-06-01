@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { apiFetch } from '../../lib/api';
-import { DashboardLayout } from '../../components/DashboardLayout';
+import { api } from '../../lib/api';
+import { AppShell, PageHeader } from '../../components/AppShell';
 
 export function UsersApproval() {
   const [users, setUsers] = useState<any[]>([]);
@@ -8,7 +8,7 @@ export function UsersApproval() {
 
   const fetchPending = async () => {
     try {
-      const data = await apiFetch('/users/pending');
+      const data = await api.get<any[]>('/users/pending');
       setUsers(data);
     } catch (err) {
       console.error(err);
@@ -23,10 +23,7 @@ export function UsersApproval() {
 
   const handleApprove = async (id: string, role: string) => {
     try {
-      await apiFetch(`/users/${id}/approve`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role })
-      });
+      await api.patch(`/users/${id}/approve`, { role });
       // Remover de la lista
       setUsers(users.filter(u => u.id !== id));
     } catch (err: any) {
@@ -35,9 +32,11 @@ export function UsersApproval() {
   };
 
   return (
-    <DashboardLayout title="Aprobación de Usuarios" role="operator">
-      <div className="bg-[#1f1f2e] border border-[#2a2a3c] rounded-2xl p-6">
-        <h2 className="text-xl font-semibold text-white mb-6">Solicitudes Pendientes</h2>
+    <AppShell>
+      <PageHeader title="Aprobación de Usuarios" />
+      <div className="p-4 md:p-6 flex flex-col gap-5">
+        <div className="bg-[#1f1f2e] border border-[#2a2a3c] rounded-2xl p-6">
+          <h2 className="text-xl font-semibold text-white mb-6">Solicitudes Pendientes</h2>
         
         {loading ? (
           <div className="flex justify-center p-8">
@@ -82,6 +81,7 @@ export function UsersApproval() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+      </div>
+    </AppShell>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { apiFetch } from '../lib/api';
+import { publicApi } from '../lib/api';
 
 export function Register() {
   const navigate = useNavigate();
@@ -22,10 +22,7 @@ export function Register() {
     setLoading(true);
 
     try {
-      const res = await apiFetch('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(form)
-      });
+      const res = await publicApi.post<any>('/auth/register', form);
       setSuccess(res.message || 'Registro enviado con éxito. Espera a ser aprobado.');
       setTimeout(() => navigate('/login'), 5000);
     } catch (err: any) {
