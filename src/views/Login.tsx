@@ -63,15 +63,15 @@ export function Login() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a]">Correo electrónico</label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a]">Usuario</label>
               <input
                 className={inputCls}
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="correo@empresa.com"
+                placeholder="Nombre de usuario o correo"
                 required
-                autoComplete="email"
+                autoComplete="username"
                 autoFocus
               />
             </div>

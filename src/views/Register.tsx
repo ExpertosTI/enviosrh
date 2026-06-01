@@ -84,14 +84,14 @@ export function Register() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Correo Electrónico</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">Usuario</label>
             <input
               required
-              type="email"
+              type="text"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors"
-              placeholder="tu@correo.com"
+              placeholder="Ej. jose_mensajero"
               disabled={loading || !!success}
             />
           </div>
