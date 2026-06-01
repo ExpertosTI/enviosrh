@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { saveSession } from '../lib/auth';
 import { IconPackage } from '../components/Icons';
@@ -103,6 +103,13 @@ export function Login() {
                 </>
               ) : 'Entrar'}
             </button>
+
+            <p className="text-center text-sm text-[#6b6b8a] mt-2">
+              ¿No tienes cuenta?{' '}
+              <Link to="/register" className="text-[#5b8af9] hover:text-[#7ba0fa] font-medium transition-colors">
+                Regístrate
+              </Link>
+            </p>
           </form>
         </div>
       </div>

@@ -77,12 +77,20 @@ export function OperatorDashboard() {
       <PageHeader
         title="Envíos"
         actions={
-          <button
-            onClick={() => nav('/operador/nuevo')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#5b8af9] text-white text-xs font-semibold hover:bg-[#3a68e0] transition-colors"
-          >
-            <IconPlus size={14} /> Nuevo
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => nav('/operador/usuarios')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#2a1a4c] text-[#a75bf9] text-xs font-semibold hover:bg-[#362060] transition-colors"
+            >
+              Aprobaciones
+            </button>
+            <button
+              onClick={() => nav('/operador/nuevo')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#5b8af9] text-white text-xs font-semibold hover:bg-[#3a68e0] transition-colors"
+            >
+              <IconPlus size={14} /> Nuevo
+            </button>
+          </div>
         }
       />
 

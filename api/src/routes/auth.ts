@@ -62,4 +62,35 @@ auth.post('/login', async (c) => {
   return c.json({ token, user: { id: user.id, name: user.name, role: user.role } });
 });
 
+// Registro de nuevos usuarios (estado pending)
+auth.post('/register', async (c) => {
+  const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  if (!checkRateLimit(ip)) {
+    return c.json({ error: 'Demasiados intentos. Espera 15 minutos.' }, 429);
+  }
+
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const { name, email, password, phone } = body as { name?: string, email?: string, password?: string, phone?: string };
+
+  if (!name || !email || !password || !phone) {
+    return c.json({ error: 'Nombre, teléfono, email y contraseña son requeridos' }, 400);
+  }
+
+  // Verificar si el correo ya existe
+  const [existing] = await sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
+  if (existing) {
+    return c.json({ error: 'El correo ya está registrado' }, 400);
+  }
+
+  const hashed = await bcrypt.hash(password, 10);
+  
+  // Insertar como pending y desactivado
+  await sql`
+    INSERT INTO users (name, phone, email, password, role, active)
+    VALUES (${name}, ${phone}, ${email}, ${hashed}, 'pending', false)
+  `;
+
+  return c.json({ message: 'Registro exitoso. Tu cuenta está a la espera de aprobación por un administrador.' }, 201);
+});
+
 export default auth;

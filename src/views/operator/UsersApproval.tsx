@@ -1,0 +1,87 @@
+import { useState, useEffect } from 'react';
+import { apiFetch } from '../../lib/api';
+import { DashboardLayout } from '../../components/DashboardLayout';
+
+export function UsersApproval() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPending = async () => {
+    try {
+      const data = await apiFetch('/users/pending');
+      setUsers(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPending();
+  }, []);
+
+  const handleApprove = async (id: string, role: string) => {
+    try {
+      await apiFetch(`/users/${id}/approve`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role })
+      });
+      // Remover de la lista
+      setUsers(users.filter(u => u.id !== id));
+    } catch (err: any) {
+      alert(err.message || 'Error al aprobar');
+    }
+  };
+
+  return (
+    <DashboardLayout title="Aprobación de Usuarios" role="operator">
+      <div className="bg-[#1f1f2e] border border-[#2a2a3c] rounded-2xl p-6">
+        <h2 className="text-xl font-semibold text-white mb-6">Solicitudes Pendientes</h2>
+        
+        {loading ? (
+          <div className="flex justify-center p-8">
+            <span className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+          </div>
+        ) : users.length === 0 ? (
+          <div className="text-center p-8 text-[#8c8cb4]">
+            <p>No hay solicitudes de registro pendientes.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {users.map(user => (
+              <div key={user.id} className="bg-[#14141f] border border-[#2a2a3c] rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-medium text-white">{user.name}</h3>
+                  <div className="text-sm text-[#8c8cb4] mt-1 space-x-3">
+                    <span>{user.email}</span>
+                    <span>•</span>
+                    <span>{user.phone}</span>
+                  </div>
+                  <div className="text-xs text-[#5c5c77] mt-1">
+                    Registrado el {new Date(user.created_at).toLocaleString()}
+                  </div>
+                </div>
+                
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => handleApprove(user.id, 'messenger')}
+                    className="px-4 py-2 bg-[#1a2b4c] text-[#5b8af9] border border-[#2a3c6c] hover:bg-[#203660] rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Aprobar como Mensajero
+                  </button>
+                  <button 
+                    onClick={() => handleApprove(user.id, 'operator')}
+                    className="px-4 py-2 bg-[#2a1a4c] text-[#a75bf9] border border-[#3c2a6c] hover:bg-[#362060] rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Aprobar como Operador
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}

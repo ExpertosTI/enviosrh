@@ -8,6 +8,7 @@ import sql from './db/index.js';
 import authRoutes from './routes/auth.js';
 import deliveriesRoutes from './routes/deliveries.js';
 import messengersRoutes from './routes/messengers.js';
+import usersRoutes from './routes/users.js';
 import portalRoutes from './routes/portal.js';
 
 // ── Validar variables críticas antes de arrancar ────────────
@@ -61,6 +62,7 @@ app.get('/health', (c) => c.text('ok'));
 app.route('/auth', authRoutes);
 app.route('/deliveries', deliveriesRoutes);
 app.route('/messengers', messengersRoutes);
+app.route('/users', usersRoutes);
 
 // Rutas públicas de portal (sin prefijo /api, token en URL)
 app.route('/p', portalRoutes);

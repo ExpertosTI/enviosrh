@@ -1,7 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { getSession } from './lib/auth';
 import { Login } from './views/Login';
+import { Register } from './views/Register';
 import { OperatorDashboard } from './views/operator/Dashboard';
+import { UsersApproval } from './views/operator/UsersApproval';
 import { NewDelivery } from './views/operator/NewDelivery';
 import { ShareDelivery } from './views/operator/ShareDelivery';
 import { MessengerDashboard } from './views/messenger/Dashboard';
@@ -26,6 +28,7 @@ export default function App() {
     <Routes>
       {/* Público */}
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route path="/p/c/:token" element={<CustomerTracking />} />
 
       {/* Raíz → redirige según rol */}
@@ -40,6 +43,9 @@ export default function App() {
       } />
       <Route path="/operador/envio/:id/compartir" element={
         <RequireAuth role="operator"><ShareDelivery /></RequireAuth>
+      } />
+      <Route path="/operador/usuarios" element={
+        <RequireAuth role="operator"><UsersApproval /></RequireAuth>
       } />
 
       {/* Mensajero */}
