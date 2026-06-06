@@ -333,10 +333,10 @@ export function MessengerPortal() {
               </a>
             )}
           </div>
-          {delivery.delivery_fee > 0 && (
+          {Number(delivery.delivery_fee) > 0 && (
             <div className="bg-[#5b8af9]/10 rounded-xl px-3 py-2 text-right">
               <div className="text-[9px] text-[#5b8af9] uppercase tracking-wider font-bold">Cobrar Envío</div>
-              <div className="text-sm font-extrabold text-[#e8e8f4] mt-0.5">RD$ {delivery.delivery_fee.toFixed(2)}</div>
+              <div className="text-sm font-extrabold text-[#e8e8f4] mt-0.5">RD$ {Number(delivery.delivery_fee).toFixed(2)}</div>
             </div>
           )}
         </div>

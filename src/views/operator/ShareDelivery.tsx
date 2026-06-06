@@ -174,8 +174,8 @@ export function ShareDelivery() {
             {delivery.notes && (
               <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Notas" value={delivery.notes} />
             )}
-            {delivery.delivery_fee > 0 && (
-              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Costo envío" value={`$${delivery.delivery_fee.toFixed(2)}`} />
+            {Number(delivery.delivery_fee) > 0 && (
+              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Costo envío" value={`$${Number(delivery.delivery_fee).toFixed(2)}`} />
             )}
           </div>
         </div>

@@ -354,9 +354,9 @@ export function OperatorDashboard() {
                       </span>
                     )}
 
-                    {d.delivery_fee > 0 && (
+                    {Number(d.delivery_fee) > 0 && (
                       <span className="text-[10px] text-[#6b6b8a] bg-[#0b0b14] px-1.5 py-0.5 rounded border border-[#252540]/40 font-medium">
-                        RD$ {d.delivery_fee.toFixed(2)}
+                        RD$ {Number(d.delivery_fee).toFixed(2)}
                       </span>
                     )}
 
