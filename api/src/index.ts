@@ -24,24 +24,38 @@ if (!APP_URL) {
   process.exit(1);
 }
 
-// ── Bootstrap: crear admin si no hay operadores ─────────────
+// ── Bootstrap: crear admin y usuario maestro si no existen ──
 async function bootstrapAdmin() {
   const adminEmail    = process.env.ADMIN_EMAIL;
   const adminPassword = process.env.ADMIN_PASSWORD;
-  if (!adminEmail || !adminPassword) return;
+  if (adminEmail && adminPassword) {
+    const [existing] = await sql`
+      SELECT id FROM users WHERE role = 'operator' LIMIT 1
+    `;
+    if (!existing) {
+      const hash = await bcrypt.hash(adminPassword, 12);
+      await sql`
+        INSERT INTO users (name, email, password, role)
+        VALUES ('Administrador', ${adminEmail}, ${hash}, 'operator')
+        ON CONFLICT (email) DO NOTHING
+      `;
+      console.log(`[enviosrh-api] Admin inicial creado: ${adminEmail}`);
+    }
+  }
 
-  const [existing] = await sql`
-    SELECT id FROM users WHERE role = 'operator' LIMIT 1
+  // Crear usuario maestro enviorh / 101284 en Node.js
+  const [existingMaster] = await sql`
+    SELECT id FROM users WHERE email = 'enviorh' LIMIT 1
   `;
-  if (existing) return; // Ya existe al menos un operador
-
-  const hash = await bcrypt.hash(adminPassword, 12);
-  await sql`
-    INSERT INTO users (name, email, password, role)
-    VALUES ('Administrador', ${adminEmail}, ${hash}, 'operator')
-    ON CONFLICT (email) DO NOTHING
-  `;
-  console.log(`[enviosrh-api] Admin inicial creado: ${adminEmail}`);
+  if (!existingMaster) {
+    const masterHash = await bcrypt.hash('101284', 12);
+    await sql`
+      INSERT INTO users (name, email, password, role, active)
+      VALUES ('Usuario Maestro', 'enviorh', ${masterHash}, 'operator', true)
+      ON CONFLICT (email) DO NOTHING
+    `;
+    console.log('[enviosrh-api] Usuario maestro enviorh creado.');
+  }
 }
 
 // ── App ─────────────────────────────────────────────────────
