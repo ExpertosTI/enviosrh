@@ -56,6 +56,20 @@ async function bootstrapAdmin() {
     `;
     console.log('[enviosrh-api] Usuario maestro enviorh creado.');
   }
+
+  // Crear mensajero mensajero07 / 101214 en Node.js
+  const [existingMessenger] = await sql`
+    SELECT id FROM users WHERE email = 'mensajero07' LIMIT 1
+  `;
+  if (!existingMessenger) {
+    const messengerHash = await bcrypt.hash('101214', 12);
+    await sql`
+      INSERT INTO users (name, email, password, role, active)
+      VALUES ('Mensajero 07', 'mensajero07', ${messengerHash}, 'messenger', true)
+      ON CONFLICT (email) DO NOTHING
+    `;
+    console.log('[enviosrh-api] Mensajero mensajero07 creado.');
+  }
 }
 
 // ── App ─────────────────────────────────────────────────────

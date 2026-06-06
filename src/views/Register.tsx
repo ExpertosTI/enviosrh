@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { publicApi } from '../lib/api';
 import { IconPackage } from '../components/Icons';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export function Register() {
   const navigate = useNavigate();
@@ -37,6 +38,11 @@ export function Register() {
 
   return (
     <div className="min-h-screen bg-[#0b0b14] flex items-center justify-center px-4 py-12">
+      {/* Theme Toggle in Register */}
+      <div className="absolute top-4 right-4 z-20">
+        <ThemeToggle />
+      </div>
+
       {/* Glow Visual de Fondo */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-[#5b8af9]/5 blur-3xl" />

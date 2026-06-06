@@ -63,4 +63,71 @@ users.post('/location', auth, async (c) => {
   return c.json(updated);
 });
 
+// Obtener estadísticas avanzadas del negocio y directorio de personas
+users.get('/admin-dashboard', auth, operatorOnly, async (c) => {
+  // 1. Estadísticas generales
+  const [totalDeliveriesRow] = await sql`SELECT count(*)::integer AS total FROM deliveries`;
+  const [activeMessengersRow] = await sql`SELECT count(*)::integer AS total FROM users WHERE role = 'messenger' AND active = true`;
+  const [activeSellersRow] = await sql`SELECT count(*)::integer AS total FROM users WHERE role = 'operator' AND active = true`;
+  const [totalCustomersRow] = await sql`SELECT count(*)::integer AS total FROM customers`;
+  const [totalFeesRow] = await sql`SELECT COALESCE(sum(delivery_fee), 0)::numeric AS total FROM deliveries`;
+  
+  const stateCounts = await sql`
+    SELECT state, count(*)::integer AS count
+    FROM deliveries
+    GROUP BY state
+  `;
+
+  // 2. Vendedores (operadores)
+  const sellers = await sql`
+    SELECT u.id, u.name, u.email, u.phone, u.created_at, count(d.id)::integer AS deliveries_created
+    FROM users u
+    LEFT JOIN deliveries d ON d.operator_id = u.id
+    WHERE u.role = 'operator'
+    GROUP BY u.id
+    ORDER BY deliveries_created DESC, u.name ASC
+  `;
+
+  // 3. Mensajeros
+  const messengersList = await sql`
+    SELECT 
+      u.id, u.name, u.email, u.phone, u.active, u.created_at,
+      u.latitude, u.longitude, u.location_updated_at,
+      count(CASE WHEN d.state = 'delivered' THEN 1 END)::integer AS deliveries_completed,
+      count(d.id)::integer AS deliveries_total,
+      COALESCE(avg(d.rating), 0)::numeric(3,2) AS average_rating
+    FROM users u
+    LEFT JOIN deliveries d ON d.messenger_id = u.id
+    WHERE u.role = 'messenger'
+    GROUP BY u.id
+    ORDER BY deliveries_completed DESC, u.name ASC
+  `;
+
+  // 4. Clientes
+  const customersList = await sql`
+    SELECT 
+      c.id, c.name, c.email, c.phone, c.address, c.reference, c.created_at,
+      count(d.id)::integer AS deliveries_received,
+      count(CASE WHEN d.state = 'delivered' THEN 1 END)::integer AS deliveries_delivered
+    FROM customers c
+    LEFT JOIN deliveries d ON d.customer_id = c.id
+    GROUP BY c.id
+    ORDER BY deliveries_received DESC, c.name ASC
+  `;
+
+  return c.json({
+    stats: {
+      total_deliveries: totalDeliveriesRow?.total ?? 0,
+      active_messengers: activeMessengersRow?.total ?? 0,
+      active_sellers: activeSellersRow?.total ?? 0,
+      total_customers: totalCustomersRow?.total ?? 0,
+      total_fees: Number(totalFeesRow?.total ?? 0),
+      states: stateCounts,
+    },
+    sellers,
+    messengers: messengersList,
+    customers: customersList,
+  });
+});
+
 export default users;

@@ -15,8 +15,11 @@ portal.get('/c/:token', async (c) => {
       d.assigned_at, d.delivered_at,
       d.customer_confirmed, d.rating,
       d.messenger_note, d.notes,
+      d.pre_confirmed, d.address_override,
       c.name AS customer_name,
       c.phone AS customer_phone,
+      c.address AS customer_address,
+      c.reference AS customer_reference,
       u.name AS messenger_name,
       u.phone AS messenger_phone,
       u.latitude AS messenger_latitude,
@@ -35,6 +38,8 @@ portal.get('/c/:token', async (c) => {
     state: row.state,
     customer_name: row.customer_name,
     customer_phone: row.customer_phone,
+    customer_address: row.address_override ?? row.customer_address ?? '',
+    customer_reference: row.customer_reference ?? '',
     notes: row.notes,
     delivery_note: row.messenger_note,
     messenger_name: row.messenger_name,
@@ -46,9 +51,41 @@ portal.get('/c/:token', async (c) => {
     assigned_at: row.assigned_at,
     delivered_at: row.delivered_at,
     customer_confirmed: row.customer_confirmed,
+    pre_confirmed: row.pre_confirmed,
     can_confirm: row.state === 'delivered' && !row.customer_confirmed,
     rating: row.rating,
   });
+});
+
+// ── Portal cliente: pre-confirmar pedido antes de salir de tienda ──
+portal.post('/c/:token/pre-confirm', async (c) => {
+  const { token } = c.req.param();
+
+  const [row] = await sql`
+    SELECT id, pre_confirmed FROM deliveries WHERE customer_token = ${token} LIMIT 1
+  `;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+  if (row.pre_confirmed) return c.json({ ok: true, message: 'Pedido ya pre-confirmado' });
+
+  await sql`
+    UPDATE deliveries
+    SET pre_confirmed = true,
+        pre_confirmed_at = now()
+    WHERE id = ${row.id}
+  `;
+
+  await sql`
+    INSERT INTO delivery_events (delivery_id, state, actor_role, note)
+    VALUES (${row.id}, 'draft', 'customer', 'Cliente pre-confirmó datos del envío')
+  `;
+
+  // Enviar alerta de pre-confirmación a la tienda/administradores
+  sendOperatorAlertEmail(
+    `Envío Pre-confirmado - #${row.id.slice(0,8).toUpperCase()}`,
+    `El cliente ha pre-confirmado y aceptado los detalles del envío #${row.id}. Ya puede ser despachado de la tienda.`
+  ).catch((err) => console.error('[Email-PreConfirm] Error:', err));
+
+  return c.json({ ok: true });
 });
 
 // ── Portal cliente: confirmar recepción ───────────────────────

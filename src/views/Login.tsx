@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { saveSession } from '../lib/auth';
 import { IconPackage } from '../components/Icons';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export function Login() {
   const nav = useNavigate();
@@ -31,6 +32,11 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-[#0b0b14] flex items-center justify-center px-4 py-12">
+      {/* Theme Toggle in Login */}
+      <div className="absolute top-4 right-4 z-20">
+        <ThemeToggle />
+      </div>
+
       {/* BG glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-[#5b8af9]/5 blur-3xl" />

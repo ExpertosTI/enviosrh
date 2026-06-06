@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { publicApi } from '../../lib/api';
 import L from 'leaflet';
 import { IconPackage, IconCheck, IconMotorbike, IconMap, IconNavigate } from '../../components/Icons';
+import { ThemeToggle } from '../../components/ThemeToggle';
 
 interface PublicMessengerDelivery {
   id: string;
@@ -33,6 +34,7 @@ export function MessengerPortal() {
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const courierMarkerRef = useRef<L.Marker | null>(null);
   const destinationMarkerRef = useRef<L.Marker | null>(null);
 
@@ -73,9 +75,15 @@ export function MessengerPortal() {
         attributionControl: false
       }).setView(dest, 14);
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 20
-      }).addTo(mapRef.current);
+      const isDark = document.documentElement.classList.contains('dark');
+      tileLayerRef.current = L.tileLayer(
+        isDark
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        { maxZoom: 20 }
+      ).addTo(mapRef.current);
+
+      setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 300);
 
       // Icono de destino (Cliente)
       const customerIcon = L.divIcon({
@@ -103,6 +111,21 @@ export function MessengerPortal() {
       // pero si cambia el id del envío sí querríamos reiniciar.
     };
   }, [delivery?.id]);
+
+  // Cambiar tile del mapa al alternar tema
+  useEffect(() => {
+    const handleThemeChange = () => {
+      if (!tileLayerRef.current) return;
+      const isDark = document.documentElement.classList.contains('dark');
+      tileLayerRef.current.setUrl(
+        isDark
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+      );
+    };
+    window.addEventListener('themechange', handleThemeChange);
+    return () => window.removeEventListener('themechange', handleThemeChange);
+  }, []);
 
   // Actualizar marcador del mensajero en el mapa
   useEffect(() => {
@@ -282,9 +305,12 @@ export function MessengerPortal() {
           </div>
           <span className="font-bold text-sm text-[#e8e8f4]">EnvíosRH</span>
         </div>
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#5b8af9]/15 text-[#5b8af9]">
-          Portal Mensajero
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#5b8af9]/15 text-[#5b8af9]">
+            Portal Mensajero
+          </span>
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Mapa */}

@@ -3,6 +3,7 @@ import { getSession, logout } from '../lib/auth';
 import {
   IconPackage, IconPlus, IconLogout, IconUser, IconMotorbike,
 } from './Icons';
+import { ThemeToggle } from './ThemeToggle';
 
 interface NavItem {
   to: string;
@@ -15,6 +16,12 @@ function operatorNav(): NavItem[] {
   return [
     { to: '/operador', label: 'Envíos', icon: <IconPackage size={20} />, exact: true },
     { to: '/operador/nuevo', label: 'Nuevo envío', icon: <IconPlus size={20} /> },
+    { to: '/operador/admin', label: 'Panel Admin', icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="3" width="7" height="9" rx="1"/><rect x="13" y="3" width="9" height="5" rx="1"/>
+        <rect x="13" y="12" width="9" height="9" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/>
+      </svg>
+    )},
   ];
 }
 
@@ -89,6 +96,7 @@ export function AppShell({ children, nav }: AppShellProps) {
               <div className="text-xs font-semibold text-[#e8e8f4] truncate">{user?.name}</div>
               <div className="text-[10px] text-[#6b6b8a] capitalize">{user?.role === 'operator' ? 'Operador' : 'Mensajero'}</div>
             </div>
+            <ThemeToggle />
             <button
               onClick={handleLogout}
               className="p-1.5 rounded-lg text-[#6b6b8a] hover:text-[#ef4444] hover:bg-[#2a0a0a] transition-colors"
@@ -109,6 +117,7 @@ export function AppShell({ children, nav }: AppShellProps) {
           </div>
           <span className="font-bold text-sm text-[#e8e8f4] flex-1">EnvíosRH</span>
           <span className="text-xs text-[#6b6b8a]">{user?.name}</span>
+          <ThemeToggle />
         </header>
 
         {/* Page content */}

@@ -46,6 +46,7 @@ export function OperatorDashboard() {
   // Leaflet Map Refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const messengerMarkersRef = useRef<Map<string, L.Marker>>(new Map());
 
@@ -89,16 +90,42 @@ export function OperatorDashboard() {
       attributionControl: false
     }).setView([18.4861, -69.9312], 12); // Centro en Santo Domingo por defecto
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20
-    }).addTo(mapRef.current);
+    const isDark = document.documentElement.classList.contains('dark');
+    tileLayerRef.current = L.tileLayer(
+      isDark
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      { maxZoom: 20 }
+    ).addTo(mapRef.current);
+
+    setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    }, 250);
 
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
+        tileLayerRef.current = null;
       }
     };
+  }, []);
+
+  // Cambiar URL del tileLayer de mapa al alternar temas
+  useEffect(() => {
+    const handleThemeChange = () => {
+      if (!tileLayerRef.current) return;
+      const isDark = document.documentElement.classList.contains('dark');
+      tileLayerRef.current.setUrl(
+        isDark
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+      );
+    };
+    window.addEventListener('themechange', handleThemeChange);
+    return () => window.removeEventListener('themechange', handleThemeChange);
   }, []);
 
   // Actualizar marcadores en el mapa cuando cambian los envíos
