@@ -9,6 +9,7 @@ import { ShareDelivery } from './views/operator/ShareDelivery';
 import { MessengerDashboard } from './views/messenger/Dashboard';
 import { MessengerDelivery } from './views/messenger/Delivery';
 import { CustomerTracking } from './views/customer/Tracking';
+import { MessengerPortal } from './views/messenger/MessengerPortal';
 
 function RequireAuth({ children, role }: { children: React.ReactNode; role?: string }) {
   const user = getSession();
@@ -29,7 +30,8 @@ export default function App() {
       {/* Público */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
-      <Route path="/p/c/:token" element={<CustomerTracking />} />
+      <Route path="/tracking/:token" element={<CustomerTracking />} />
+      <Route path="/m-portal/:token" element={<MessengerPortal />} />
 
       {/* Raíz → redirige según rol */}
       <Route path="/" element={<HomeRedirect />} />

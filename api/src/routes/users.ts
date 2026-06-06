@@ -38,4 +38,29 @@ users.patch('/:id/approve', auth, operatorOnly, async (c) => {
   return c.json(updated);
 });
 
+// Actualizar ubicación en tiempo real (mensajero)
+users.post('/location', auth, async (c) => {
+  const user = c.get('user');
+  const { latitude, longitude } = await c.req.json<{ latitude: number; longitude: number }>();
+
+  if (latitude === undefined || longitude === undefined) {
+    return c.json({ error: 'Latitud y longitud requeridas' }, 400);
+  }
+
+  const [updated] = await sql`
+    UPDATE users
+    SET latitude = ${latitude},
+        longitude = ${longitude},
+        location_updated_at = now()
+    WHERE id = ${user.sub}
+    RETURNING id, name, latitude, longitude, location_updated_at
+  `;
+
+  if (!updated) {
+    return c.json({ error: 'Usuario no encontrado' }, 404);
+  }
+
+  return c.json(updated);
+});
+
 export default users;

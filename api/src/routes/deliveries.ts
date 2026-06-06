@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import sql from '../db/index.js';
 import { auth, operatorOnly } from '../middleware/auth.js';
 import { messengerMessage, customerMessage, waLink } from '../lib/whatsapp.js';
+import { sendCustomerTrackingEmail, sendMessengerAssignmentEmail, sendOperatorAlertEmail } from '../lib/email.js';
 
 const deliveries = new Hono();
 
@@ -27,7 +28,10 @@ deliveries.get('/', auth, async (c) => {
       c.reference AS customer_reference,
       u.id   AS messenger_id,
       u.name AS messenger_name,
-      u.phone AS messenger_phone
+      u.phone AS messenger_phone,
+      u.latitude AS messenger_latitude,
+      u.longitude AS messenger_longitude,
+      u.location_updated_at AS messenger_location_updated_at
     FROM deliveries d
     JOIN customers c ON c.id = d.customer_id
     LEFT JOIN users u ON u.id = d.messenger_id
@@ -44,7 +48,7 @@ deliveries.get('/', auth, async (c) => {
 // ── Crear envío ──────────────────────────────────────────────
 deliveries.post('/', auth, operatorOnly, async (c) => {
   const body = await c.req.json<{
-    customer: { name: string; phone: string; address?: string; reference?: string; notes?: string };
+    customer: { name: string; phone: string; email?: string; address?: string; reference?: string; notes?: string };
     location_link?: string;
     delivery_fee?: number;
     messenger_id?: string;
@@ -59,15 +63,16 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     return c.json({ error: 'Nombre y teléfono del cliente requeridos' }, 400);
   }
 
-  // Upsert cliente por teléfono
+  // Upsert cliente por teléfono (incluyendo correo)
   const [cust] = await sql`
-    INSERT INTO customers (name, phone, address, reference, notes)
-    VALUES (${customer.name}, ${customer.phone}, ${customer.address ?? null}, ${customer.reference ?? null}, ${customer.notes ?? null})
+    INSERT INTO customers (name, phone, address, reference, notes, email)
+    VALUES (${customer.name}, ${customer.phone}, ${customer.address ?? null}, ${customer.reference ?? null}, ${customer.notes ?? null}, ${customer.email ?? null})
     ON CONFLICT (phone) DO UPDATE
       SET name      = EXCLUDED.name,
           address   = COALESCE(EXCLUDED.address, customers.address),
-          reference = COALESCE(EXCLUDED.reference, customers.reference)
-    RETURNING id, name, phone, address, reference
+          reference = COALESCE(EXCLUDED.reference, customers.reference),
+          email     = COALESCE(EXCLUDED.email, customers.email)
+    RETURNING id, name, phone, address, reference, email
   `;
 
   const state = messenger_id ? 'assigned' : 'draft';
@@ -98,6 +103,25 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     VALUES (${delivery.id}, ${state}, ${c.get('user').sub}, 'operator', 'Envío creado')
   `;
 
+  // ── Enviar Notificación por Correo al Cliente ───────────────────────
+  if (cust.email) {
+    sendCustomerTrackingEmail(cust.email, cust.name, delivery.customer_token, {
+      address: cust.address ?? delivery.address_override ?? 'Ver portal de seguimiento'
+    }).catch(err => console.error('[Email-Client] Error:', err));
+  }
+
+  // ── Enviar Notificación por Correo al Mensajero ─────────────────────
+  if (messenger_id) {
+    const [messenger] = await sql`SELECT email, name FROM users WHERE id = ${messenger_id} LIMIT 1`;
+    if (messenger && messenger.email) {
+      sendMessengerAssignmentEmail(messenger.email, messenger.name, delivery.messenger_token, {
+        customerName: cust.name,
+        address: cust.address ?? delivery.address_override ?? 'Ver portal de entrega',
+        fee: Number(delivery.delivery_fee)
+      }).catch(err => console.error('[Email-Messenger] Error:', err));
+    }
+  }
+
   return c.json({ ...delivery, customer: cust }, 201);
 });
 
@@ -121,7 +145,10 @@ deliveries.get('/:id', auth, async (c) => {
       c.reference AS customer_reference,
       u.id   AS messenger_id,
       u.name AS messenger_name,
-      u.phone AS messenger_phone
+      u.phone AS messenger_phone,
+      u.latitude AS messenger_latitude,
+      u.longitude AS messenger_longitude,
+      u.location_updated_at AS messenger_location_updated_at
     FROM deliveries d
     JOIN customers c ON c.id = d.customer_id
     LEFT JOIN users u ON u.id = d.messenger_id
@@ -174,8 +201,8 @@ deliveries.get('/:id/share', auth, async (c) => {
     state: row.state,
     customer: { name: row.customer_name, phone: row.customer_phone },
     messenger: row.messenger_id ? { name: row.messenger_name, phone: row.messenger_phone } : null,
-    customer_token_url: `${process.env.APP_URL}/p/c/${row.customer_token}`,
-    messenger_token_url: `${process.env.APP_URL}/p/m/${row.messenger_token}`,
+    customer_token_url: `${process.env.APP_URL}/tracking/${row.customer_token}`,
+    messenger_token_url: `${process.env.APP_URL}/m-portal/${row.messenger_token}`,
     whatsapp_customer: custWa,
     whatsapp_messenger: messWa,
   });
@@ -184,15 +211,17 @@ deliveries.get('/:id/share', auth, async (c) => {
 // ── Asignar / reasignar mensajero ────────────────────────────
 deliveries.patch('/:id/assign', auth, operatorOnly, async (c) => {
   const { id } = c.req.param();
-  const { messenger_id } = await c.req.json<{ messenger_id: string }>();
+  const { messenger_id } = await c.req.json<{ messenger_id: string | null }>();
+
+  const state = messenger_id ? 'assigned' : 'draft';
 
   const [updated] = await sql`
     UPDATE deliveries
-    SET messenger_id = ${messenger_id},
-        state = 'assigned',
-        assigned_at = now()
+    SET messenger_id = ${messenger_id || null},
+        state = ${state},
+        assigned_at = ${messenger_id ? sql`now()` : null}
     WHERE id = ${id}
-    RETURNING id, state, messenger_id, customer_token, messenger_token
+    RETURNING id, state, messenger_id, customer_token, messenger_token, customer_id, delivery_fee, address_override
   `;
   if (!updated) return c.json({ error: 'No encontrado' }, 404);
 
@@ -200,6 +229,27 @@ deliveries.patch('/:id/assign', auth, operatorOnly, async (c) => {
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
     VALUES (${id}, 'assigned', ${c.get('user').sub}, 'operator', 'Mensajero asignado')
   `;
+
+  // ── Notificar al mensajero y cliente por correo ─────────────────────
+  if (messenger_id) {
+    Promise.all([
+      sql`SELECT name, address, email FROM customers WHERE id = ${updated.customer_id} LIMIT 1`,
+      sql`SELECT email, name FROM users WHERE id = ${messenger_id} LIMIT 1`
+    ]).then(([[cust], [messenger]]) => {
+      if (messenger && messenger.email) {
+        sendMessengerAssignmentEmail(messenger.email, messenger.name, updated.messenger_token, {
+          customerName: cust?.name ?? 'Cliente',
+          address: cust?.address ?? updated.address_override ?? 'Ver portal de entrega',
+          fee: Number(updated.delivery_fee)
+        });
+      }
+      if (cust && cust.email) {
+        sendCustomerTrackingEmail(cust.email, cust.name, updated.customer_token, {
+          address: cust.address ?? updated.address_override ?? 'Ver portal'
+        });
+      }
+    }).catch(err => console.error('[Email-Assign] Error:', err));
+  }
 
   return c.json(updated);
 });
@@ -259,12 +309,35 @@ deliveries.patch('/:id/cancel', auth, operatorOnly, async (c) => {
   const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
 
   await sql`
-    UPDATE deliveries SET state = 'cancelled', notes = ${note ?? null} WHERE id = ${id}
+    UPDATE deliveries SET state = 'cancelled' WHERE id = ${id}
   `;
   await sql`
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
     VALUES (${id}, 'cancelled', ${c.get('user').sub}, 'operator', ${note ?? null})
   `;
+
+  // ── Notificar cancelación ──────────────────────────────────────────
+  sql`
+    SELECT d.id, c.email AS customer_email, c.name AS customer_name,
+           u.email AS messenger_email, u.name AS messenger_name
+    FROM deliveries d
+    JOIN customers c ON c.id = d.customer_id
+    LEFT JOIN users u ON u.id = d.messenger_id
+    WHERE d.id = ${id}
+    LIMIT 1
+  `.then(([info]) => {
+    if (!info) return;
+    const details = `El envío #${info.id.slice(0,8).toUpperCase()} ha sido cancelado por el operador. ${note ? `Motivo: ${note}` : ''}`;
+    
+    // Alerta al correo administrativo
+    sendOperatorAlertEmail(`Envío Cancelado - #${info.id.slice(0,8).toUpperCase()}`, details);
+    
+    // Notificación al mensajero
+    if (info.messenger_email) {
+      sendOperatorAlertEmail(`Envío Cancelado - #${info.id.slice(0,8).toUpperCase()}`, `Hola ${info.messenger_name}, el envío de ${info.customer_name} asignado a tu ruta ha sido cancelado.`);
+    }
+  }).catch(err => console.error('[Email-Cancel] Error:', err));
+
   return c.json({ state: 'cancelled' });
 });
 

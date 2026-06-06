@@ -35,7 +35,7 @@ export function MessengerDelivery() {
     if (!id) return;
     setLoading(true); setError('');
     try {
-      await api.patch(`/deliveries/${id}`, { state: 'in_transit' });
+      await api.patch(`/deliveries/${id}/in-transit`);
       setDelivery((p) => p ? { ...p, state: 'in_transit' as DeliveryState } : p);
     } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
     finally { setLoading(false); }
@@ -45,7 +45,7 @@ export function MessengerDelivery() {
     if (!id) return;
     setLoading(true); setError('');
     try {
-      await api.patch(`/deliveries/${id}`, { state: 'delivered', delivery_note: note || undefined });
+      await api.patch(`/deliveries/${id}/deliver`, { note: note || undefined });
       setDelivery((p) => p ? { ...p, state: 'delivered' as DeliveryState } : p);
     } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
     finally { setLoading(false); }

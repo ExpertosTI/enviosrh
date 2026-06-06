@@ -35,6 +35,9 @@ export interface Delivery {
   messenger_id: string | null;
   messenger_name: string | null;
   messenger_phone: string | null;
+  messenger_latitude?: number | string | null;
+  messenger_longitude?: number | string | null;
+  messenger_location_updated_at?: string | null;
 }
 
 export type DeliveryState = 'draft' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled';

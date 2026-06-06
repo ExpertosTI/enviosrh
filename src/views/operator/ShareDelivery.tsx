@@ -98,7 +98,7 @@ export function ShareDelivery() {
     if (!id) return;
     setAssigning(true); setError(''); setSuccess('');
     try {
-      await api.patch(`/deliveries/${id}`, { messenger_id: selectedMsn || null });
+      await api.patch(`/deliveries/${id}/assign`, { messenger_id: selectedMsn || null });
       setSuccess(selectedMsn ? 'Mensajero asignado' : 'Mensajero removido');
       load();
     } catch (err) {
@@ -107,10 +107,12 @@ export function ShareDelivery() {
   }
 
   async function handleCancel() {
-    if (!id || !confirm('¿Cancelar este envío?')) return;
+    if (!id) return;
+    const note = prompt('Motivo de la cancelación (opcional):');
+    if (note === null) return; // Cancelado por el usuario
     setCancelling(true); setError('');
     try {
-      await api.patch(`/deliveries/${id}`, { state: 'cancelled' });
+      await api.patch(`/deliveries/${id}/cancel`, { note: note || undefined });
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
