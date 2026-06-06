@@ -150,7 +150,7 @@ export function AdminPanel() {
     <AppShell>
       <PageHeader title="Panel Administrativo" back="/operador" />
 
-      <div className="p-4 md:p-6 flex flex-col gap-6 overflow-y-auto h-full pb-16">
+      <div className="p-4 md:p-6 flex flex-col gap-6 pb-16">
 
         {/* ── Error ── */}
         {error && (
