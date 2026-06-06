@@ -1,9 +1,57 @@
 import { Hono } from 'hono';
 import sql from '../db/index.js';
 import { sendOperatorAlertEmail } from '../lib/email.js';
+import { isValidToken } from '../lib/validation.js';
 
 /** Rutas públicas: no requieren JWT. Usan tokens firmados de BD. */
 const portal = new Hono();
+
+// ── Rate limiter en memoria para portales públicos ─────────────
+const portalAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function portalRateLimit(limit: number, windowMs: number) {
+  return async (c: any, next: any) => {
+    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const now = Date.now();
+    const entry = portalAttempts.get(ip);
+    
+    if (!entry || entry.resetAt < now) {
+      portalAttempts.set(ip, { count: 1, resetAt: now + windowMs });
+      await next();
+      return;
+    }
+    
+    if (entry.count >= limit) {
+      return c.json({ error: 'Demasiadas solicitudes. Intente más tarde.' }, 429);
+    }
+    
+    entry.count++;
+    await next();
+  };
+}
+
+// Limpiar entradas expiradas cada 10 minutos
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of portalAttempts) {
+    if (v.resetAt < now) portalAttempts.delete(k);
+  }
+}, 10 * 60 * 1000);
+
+// Aplicar rate limit (120 reqs/minuto) a todas las rutas públicas del portal
+portal.use('*', portalRateLimit(120, 60 * 1000));
+
+// Validar sintaxis del token en rutas públicas (/c/:token y /m/:token)
+portal.use('*', async (c, next) => {
+  const match = c.req.path.match(/\/(c|m)\/([^\/]+)/);
+  if (match) {
+    const token = match[2];
+    if (!isValidToken(token)) {
+      return c.json({ error: 'Token no válido' }, 400);
+    }
+  }
+  await next();
+});
 
 // ── Portal cliente: ver estado ────────────────────────────────
 portal.get('/c/:token', async (c) => {
@@ -24,10 +72,20 @@ portal.get('/c/:token', async (c) => {
       u.phone AS messenger_phone,
       u.latitude AS messenger_latitude,
       u.longitude AS messenger_longitude,
-      u.location_updated_at AS messenger_location_updated_at
+      u.location_updated_at AS messenger_location_updated_at,
+      t.name AS tenant_name,
+      t.logo_url AS tenant_logo_url,
+      t.primary_color AS tenant_primary_color,
+      t.secondary_color AS tenant_secondary_color,
+      t.accent_color AS tenant_accent_color,
+      t.theme_mode AS tenant_theme_mode,
+      t.contact_email AS tenant_contact_email,
+      t.contact_phone AS tenant_contact_phone,
+      t.address AS tenant_address
     FROM deliveries d
     JOIN customers c ON c.id = d.customer_id
     LEFT JOIN users u ON u.id = d.messenger_id
+    JOIN tenants t ON t.id = d.tenant_id
     WHERE d.customer_token = ${token}
     LIMIT 1
   `;
@@ -54,6 +112,17 @@ portal.get('/c/:token', async (c) => {
     pre_confirmed: row.pre_confirmed,
     can_confirm: row.state === 'delivered' && !row.customer_confirmed,
     rating: row.rating,
+    tenant: {
+      name: row.tenant_name,
+      logo_url: row.tenant_logo_url,
+      primary_color: row.tenant_primary_color,
+      secondary_color: row.tenant_secondary_color,
+      accent_color: row.tenant_accent_color,
+      theme_mode: row.tenant_theme_mode,
+      contact_email: row.tenant_contact_email,
+      contact_phone: row.tenant_contact_phone,
+      address: row.tenant_address,
+    }
   });
 });
 
@@ -161,9 +230,19 @@ portal.get('/m/:token', async (c) => {
       d.id, d.state, d.delivery_fee, d.location_link,
       d.address_override, d.notes,
       c.name AS customer_name, c.phone AS customer_phone,
-      c.address AS customer_address, c.reference AS customer_reference
+      c.address AS customer_address, c.reference AS customer_reference,
+      t.name AS tenant_name,
+      t.logo_url AS tenant_logo_url,
+      t.primary_color AS tenant_primary_color,
+      t.secondary_color AS tenant_secondary_color,
+      t.accent_color AS tenant_accent_color,
+      t.theme_mode AS tenant_theme_mode,
+      t.contact_email AS tenant_contact_email,
+      t.contact_phone AS tenant_contact_phone,
+      t.address AS tenant_address
     FROM deliveries d
     JOIN customers c ON c.id = d.customer_id
+    JOIN tenants t ON t.id = d.tenant_id
     WHERE d.messenger_token = ${token}
     LIMIT 1
   `;
@@ -191,6 +270,17 @@ portal.get('/m/:token', async (c) => {
     notes: row.notes,
     nav_google: googleUrl,
     nav_waze: wazeUrl,
+    tenant: {
+      name: row.tenant_name,
+      logo_url: row.tenant_logo_url,
+      primary_color: row.tenant_primary_color,
+      secondary_color: row.tenant_secondary_color,
+      accent_color: row.tenant_accent_color,
+      theme_mode: row.tenant_theme_mode,
+      contact_email: row.tenant_contact_email,
+      contact_phone: row.tenant_contact_phone,
+      address: row.tenant_address,
+    }
   });
 });
 

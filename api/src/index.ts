@@ -2,6 +2,8 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
+import { bodyLimit } from 'hono/body-limit';
 import bcrypt from 'bcryptjs';
 import { runMigrations } from './db/index.js';
 import sql from './db/index.js';
@@ -9,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import deliveriesRoutes from './routes/deliveries.js';
 import messengersRoutes from './routes/messengers.js';
 import usersRoutes from './routes/users.js';
+import tenantRoutes from './routes/tenant.js';
 import portalRoutes from './routes/portal.js';
 
 // ── Validar variables críticas antes de arrancar ────────────
@@ -28,6 +31,14 @@ if (!APP_URL) {
 async function bootstrapAdmin() {
   const adminEmail    = process.env.ADMIN_EMAIL;
   const adminPassword = process.env.ADMIN_PASSWORD;
+  
+  // Asegurar que existe inquilino por defecto
+  await sql`
+    INSERT INTO tenants (id, name, slug, primary_color, secondary_color, accent_color, theme_mode)
+    VALUES ('d0000000-0000-0000-0000-000000000000', 'EnvíosRH', 'enviosrh', '#5b8af9', '#4f46e5', '#f59e0b', 'light')
+    ON CONFLICT (slug) DO NOTHING
+  `;
+
   if (adminEmail && adminPassword) {
     const [existing] = await sql`
       SELECT id FROM users WHERE role = 'operator' LIMIT 1
@@ -35,8 +46,8 @@ async function bootstrapAdmin() {
     if (!existing) {
       const hash = await bcrypt.hash(adminPassword, 12);
       await sql`
-        INSERT INTO users (name, email, password, role)
-        VALUES ('Administrador', ${adminEmail}, ${hash}, 'operator')
+        INSERT INTO users (name, email, password, role, tenant_id)
+        VALUES ('Administrador', ${adminEmail}, ${hash}, 'operator', 'd0000000-0000-0000-0000-000000000000')
         ON CONFLICT (email) DO NOTHING
       `;
       console.log(`[enviosrh-api] Admin inicial creado: ${adminEmail}`);
@@ -50,8 +61,8 @@ async function bootstrapAdmin() {
   if (!existingMaster) {
     const masterHash = await bcrypt.hash('101284', 12);
     await sql`
-      INSERT INTO users (name, email, password, role, active)
-      VALUES ('Usuario Maestro', 'enviorh', ${masterHash}, 'operator', true)
+      INSERT INTO users (name, email, password, role, active, tenant_id)
+      VALUES ('Usuario Maestro', 'enviorh', ${masterHash}, 'operator', true, 'd0000000-0000-0000-0000-000000000000')
       ON CONFLICT (email) DO NOTHING
     `;
     console.log('[enviosrh-api] Usuario maestro enviorh creado.');
@@ -64,8 +75,8 @@ async function bootstrapAdmin() {
   if (!existingMessenger) {
     const messengerHash = await bcrypt.hash('101214', 12);
     await sql`
-      INSERT INTO users (name, email, password, role, active)
-      VALUES ('Mensajero 07', 'mensajero07', ${messengerHash}, 'messenger', true)
+      INSERT INTO users (name, email, password, role, active, tenant_id)
+      VALUES ('Mensajero 07', 'mensajero07', ${messengerHash}, 'messenger', true, 'd0000000-0000-0000-0000-000000000000')
       ON CONFLICT (email) DO NOTHING
     `;
     console.log('[enviosrh-api] Mensajero mensajero07 creado.');
@@ -75,6 +86,8 @@ async function bootstrapAdmin() {
 // ── App ─────────────────────────────────────────────────────
 const app = new Hono();
 
+// Middlewares de seguridad y logs
+app.use('*', secureHeaders());
 app.use('*', logger());
 app.use('*', cors({
   origin: APP_URL,
@@ -82,6 +95,22 @@ app.use('*', cors({
   allowMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
   credentials: true,
 }));
+
+// Límite de consumo de recursos: Max 2MB payload
+app.use('*', bodyLimit({
+  maxSize: 2 * 1024 * 1024,
+  onError: (c) => c.json({ error: 'Tamaño de solicitud excedido (máximo 2MB)' }, 413)
+}));
+
+// Manejo centralizado de errores (Security: no revelar stack traces en prod)
+app.onError((err, c) => {
+  console.error('[enviosrh-api] Unhandled Error:', err);
+  return c.json({ error: 'Error interno del servidor' }, 500);
+});
+
+app.notFound((c) => {
+  return c.json({ error: 'Ruta no encontrada' }, 404);
+});
 
 // Health check
 app.get('/health', (c) => c.text('ok'));
@@ -91,6 +120,7 @@ app.route('/auth', authRoutes);
 app.route('/deliveries', deliveriesRoutes);
 app.route('/messengers', messengersRoutes);
 app.route('/users', usersRoutes);
+app.route('/tenant', tenantRoutes);
 
 // Rutas públicas de portal (sin prefijo /api, token en URL)
 app.route('/p', portalRoutes);

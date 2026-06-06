@@ -6,6 +6,7 @@ export interface TokenPayload {
   sub: string;   // user id
   role: string;  // 'operator' | 'messenger'
   name: string;
+  tenant_id: string;
 }
 
 export async function signToken(payload: TokenPayload): Promise<string> {

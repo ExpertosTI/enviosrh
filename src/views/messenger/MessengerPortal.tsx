@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { publicApi } from '../../lib/api';
+import type { Tenant } from '../../types';
 import L from 'leaflet';
 import { IconPackage, IconCheck, IconMotorbike, IconMap, IconNavigate } from '../../components/Icons';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { applyTenantTheme } from '../../lib/theme';
 
 interface PublicMessengerDelivery {
   id: string;
@@ -18,6 +20,7 @@ interface PublicMessengerDelivery {
   notes: string | null;
   nav_google: string;
   nav_waze: string;
+  tenant?: Tenant;
 }
 
 export function MessengerPortal() {
@@ -49,6 +52,15 @@ export function MessengerPortal() {
   useEffect(() => {
     loadDelivery();
   }, [token]);
+
+  useEffect(() => {
+    if (delivery?.tenant) {
+      applyTenantTheme(delivery.tenant);
+    }
+    return () => {
+      applyTenantTheme(null);
+    };
+  }, [delivery?.tenant]);
 
   // Extraer coordenadas del cliente si existen en el link de navegación
   const getDestinationCoords = (): [number, number] | null => {
@@ -299,14 +311,20 @@ export function MessengerPortal() {
     <div className="min-h-screen bg-[#0b0b14] flex flex-col">
       {/* Header */}
       <header className="bg-[#13131f]/90 backdrop-blur-md border-b border-[#252540] px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-[#5b8af9]/20 flex items-center justify-center">
-            <IconPackage size={16} color="#5b8af9" />
-          </div>
-          <span className="font-bold text-sm text-[#e8e8f4]">EnvíosRH</span>
+        <div className="flex items-center gap-2.5">
+          {delivery?.tenant?.logo_url ? (
+            <img src={delivery.tenant.logo_url} alt="Logo" className="w-7 h-7 object-contain rounded" />
+          ) : (
+            <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
+              <IconPackage size={16} className="text-primary" />
+            </div>
+          )}
+          <span className="font-bold text-sm text-[#e8e8f4]">
+            {delivery?.tenant?.name ?? 'EnvíosRH'}
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#5b8af9]/15 text-[#5b8af9]">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/15 text-primary">
             Portal Mensajero
           </span>
           <ThemeToggle />

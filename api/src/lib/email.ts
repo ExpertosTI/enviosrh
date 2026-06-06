@@ -1,12 +1,12 @@
 import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
-  host: 'smtp.hostinger.com',
-  port: 465,
-  secure: true,
+  host: process.env.SMTP_HOST ?? 'smtp.hostinger.com',
+  port: Number(process.env.SMTP_PORT ?? 465),
+  secure: process.env.SMTP_SECURE !== 'false',
   auth: {
-    user: 'info@renace.tech',
-    pass: 'JustWork2027@',
+    user: process.env.SMTP_USER ?? 'info@renace.tech',
+    pass: process.env.SMTP_PASS ?? 'JustWork2027@',
   },
 });
 
@@ -24,7 +24,7 @@ export async function sendCustomerTrackingEmail(
 ) {
   const trackingLink = `${appUrl()}/tracking/${customerToken}`;
   const mailOptions = {
-    from: `"EnvíosRH" <info@renace.tech>`,
+    from: `"${process.env.COMPANY_NAME ?? 'EnvíosRH'}" <${process.env.SMTP_USER ?? 'info@renace.tech'}>`,
     to,
     subject: `Tu pedido de ${companyName()} está listo / en camino`,
     html: `
@@ -65,7 +65,7 @@ export async function sendMessengerAssignmentEmail(
 ) {
   const portalLink = `${appUrl()}/m-portal/${messengerToken}`;
   const mailOptions = {
-    from: `"EnvíosRH" <info@renace.tech>`,
+    from: `"${process.env.COMPANY_NAME ?? 'EnvíosRH'}" <${process.env.SMTP_USER ?? 'info@renace.tech'}>`,
     to,
     subject: `🛵 Nuevo envío asignado - ${details.customerName}`,
     html: `
@@ -101,8 +101,8 @@ export async function sendMessengerAssignmentEmail(
  */
 export async function sendOperatorAlertEmail(subject: string, text: string) {
   const mailOptions = {
-    from: `"Alertas EnvíosRH" <info@renace.tech>`,
-    to: 'info@renace.tech',
+    from: `"Alertas ${process.env.COMPANY_NAME ?? 'EnvíosRH'}" <${process.env.SMTP_USER ?? 'info@renace.tech'}>`,
+    to: process.env.SMTP_ALERT_TO ?? process.env.SMTP_USER ?? 'info@renace.tech',
     subject: `[Alerta] ${subject}`,
     text,
   };

@@ -6,6 +6,12 @@
   :root {
     --font: 'Inter', system-ui, -apple-system, sans-serif;
     
+    /* Variables de Branding Dinámico */
+    --primary-color: #5b8af9;
+    --primary-dark: #3a68e0;
+    --primary-light: #7fa5ff;
+    --accent-color: #a78bfa;
+
     /* Variables de Tema Claro (Por defecto) */
     --bg-color: #f8fafc;
     --surface-color: #ffffff;
@@ -181,7 +187,14 @@
            px-4 py-3 text-sm transition-all duration-150
            disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer select-none border-0;
   }
-  .btn-primary  { @apply btn bg-[#5b8af9] text-white hover:bg-[#3a68e0] active:scale-[.97]; }
+  .btn-primary  {
+    @apply btn text-white active:scale-[.97];
+    background-color: var(--primary-color) !important;
+    transition: filter 0.15s ease, transform 0.15s ease;
+  }
+  .btn-primary:hover {
+    filter: brightness(0.9);
+  }
   .btn-ghost    {
     @apply btn active:scale-[.97];
     background-color: var(--btn-ghost-bg);
@@ -284,3 +297,37 @@
 .leaflet-popup-tip {
   background-color: var(--surface-color) !important;
 }
+
+/* Glassmorphism Premium Theme */
+.theme-glass {
+  --bg-color: #080710;
+  background-image: radial-gradient(circle at 10% 20%, rgba(91, 138, 249, 0.08) 0%, transparent 40%),
+                    radial-gradient(circle at 90% 80%, rgba(167, 91, 249, 0.08) 0%, transparent 40%);
+}
+.theme-glass .card,
+.theme-glass aside,
+.theme-glass header {
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+}
+.theme-glass input,
+.theme-glass select,
+.theme-glass textarea {
+  background: rgba(255, 255, 255, 0.02) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+.theme-glass .ditem {
+  background: rgba(255, 255, 255, 0.02) !important;
+  backdrop-filter: blur(8px);
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+.theme-glass .ditem:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: var(--primary-color) !important;
+}
+

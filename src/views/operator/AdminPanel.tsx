@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { AppShell, PageHeader } from '../../components/AppShell';
+import { TenantSettings } from './TenantSettings';
 
 // ── Tipos ────────────────────────────────────────────────────
 interface StateCount { state: string; count: number; }
@@ -105,7 +106,7 @@ export function AdminPanel() {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'sellers' | 'messengers' | 'customers'>('messengers');
+  const [tab, setTab] = useState<'sellers' | 'messengers' | 'customers' | 'settings'>('messengers');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -234,41 +235,46 @@ export function AdminPanel() {
             {/* ── Directorios ── */}
             <div className="bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-2xl transition-colors duration-200 overflow-hidden">
               {/* Tabs */}
-              <div className="flex border-b border-slate-100 dark:border-[#252540]">
+              <div className="flex border-b border-slate-100 dark:border-[#252540] overflow-x-auto">
                 {([
                   { key: 'messengers', label: 'Mensajeros', count: data.messengers.length },
                   { key: 'sellers',    label: 'Vendedores', count: data.sellers.length },
                   { key: 'customers',  label: 'Clientes',   count: data.customers.length },
+                  { key: 'settings',   label: 'Marca y Perfil', count: null },
                 ] as const).map(t => (
                   <button
                     key={t.key}
                     onClick={() => { setTab(t.key); setSearch(''); }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-bold transition-colors border-0 cursor-pointer ${
+                    className={`flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3.5 text-xs font-bold transition-colors border-0 cursor-pointer ${
                       tab === t.key
                         ? 'text-[#5b8af9] border-b-2 border-[#5b8af9] bg-[#5b8af9]/5'
                         : 'text-slate-400 dark:text-[#6b6b8a] hover:text-slate-700 dark:hover:text-[#e8e8f4] bg-transparent'
                     }`}
                   >
                     {t.label}
-                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-extrabold ${tab === t.key ? 'bg-[#5b8af9]/15 text-[#5b8af9]' : 'bg-slate-100 dark:bg-[#252540]/60 text-slate-400 dark:text-[#6b6b8a]'}`}>
-                      {t.count}
-                    </span>
+                    {t.count !== null && (
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-extrabold ${tab === t.key ? 'bg-[#5b8af9]/15 text-[#5b8af9]' : 'bg-slate-100 dark:bg-[#252540]/60 text-slate-400 dark:text-[#6b6b8a]'}`}>
+                        {t.count}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
 
               {/* Búsqueda */}
-              <div className="p-4 border-b border-slate-50 dark:border-[#252540]/60">
-                <SearchInput
-                  value={search}
-                  onChange={setSearch}
-                  placeholder={
-                    tab === 'sellers' ? 'Buscar por nombre, email o teléfono…' :
-                    tab === 'messengers' ? 'Buscar mensajero por nombre, email o teléfono…' :
-                    'Buscar cliente por nombre, teléfono, email o dirección…'
-                  }
-                />
-              </div>
+              {tab !== 'settings' && (
+                <div className="p-4 border-b border-slate-50 dark:border-[#252540]/60">
+                  <SearchInput
+                    value={search}
+                    onChange={setSearch}
+                    placeholder={
+                      tab === 'sellers' ? 'Buscar por nombre, email o teléfono…' :
+                      tab === 'messengers' ? 'Buscar mensajero por nombre, email o teléfono…' :
+                      'Buscar cliente por nombre, teléfono, email o dirección…'
+                    }
+                  />
+                </div>
+              )}
 
               {/* ── Tabla Mensajeros ── */}
               {tab === 'messengers' && (
@@ -425,6 +431,12 @@ export function AdminPanel() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {/* ── Configuración de Marca ── */}
+              {tab === 'settings' && (
+                <div className="p-4 md:p-6 bg-slate-50 dark:bg-[#0b0b14]/30">
+                  <TenantSettings />
                 </div>
               )}
             </div>

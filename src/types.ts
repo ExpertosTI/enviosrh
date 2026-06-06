@@ -1,7 +1,22 @@
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  theme_mode: 'light' | 'dark' | 'glass';
+  contact_email: string | null;
+  contact_phone: string | null;
+  address: string | null;
+}
+
 export interface User {
   id: string;
   name: string;
-  role: 'operator' | 'messenger';
+  role: 'operator' | 'messenger' | 'pending';
+  tenant?: Tenant;
 }
 
 export interface Customer {

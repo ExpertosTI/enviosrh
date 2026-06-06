@@ -43,9 +43,15 @@ auth.post('/login', async (c) => {
   }
 
   const [user] = await sql`
-    SELECT id, name, email, password, role, active
-    FROM users
-    WHERE email = ${email}
+    SELECT u.id, u.name, u.email, u.password, u.role, u.active, u.tenant_id,
+           t.name AS tenant_name, t.slug AS tenant_slug, t.logo_url AS tenant_logo_url,
+           t.primary_color AS tenant_primary_color, t.secondary_color AS tenant_secondary_color,
+           t.accent_color AS tenant_accent_color, t.theme_mode AS tenant_theme_mode,
+           t.contact_email AS tenant_contact_email, t.contact_phone AS tenant_contact_phone,
+           t.address AS tenant_address
+    FROM users u
+    JOIN tenants t ON t.id = u.tenant_id
+    WHERE u.email = ${email}
     LIMIT 1
   `;
 
@@ -57,12 +63,37 @@ auth.post('/login', async (c) => {
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) return c.json({ error: 'Credenciales incorrectas' }, 401);
 
-  const token = await signToken({ sub: user.id, role: user.role, name: user.name });
+  const token = await signToken({
+    sub: user.id,
+    role: user.role,
+    name: user.name,
+    tenant_id: user.tenant_id
+  });
 
-  return c.json({ token, user: { id: user.id, name: user.name, role: user.role } });
+  return c.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      tenant: {
+        id: user.tenant_id,
+        name: user.tenant_name,
+        slug: user.tenant_slug,
+        logo_url: user.tenant_logo_url,
+        primary_color: user.tenant_primary_color,
+        secondary_color: user.tenant_secondary_color,
+        accent_color: user.tenant_accent_color,
+        theme_mode: user.tenant_theme_mode,
+        contact_email: user.tenant_contact_email,
+        contact_phone: user.tenant_contact_phone,
+        address: user.tenant_address,
+      }
+    }
+  });
 });
 
-// Registro de nuevos usuarios (estado pending)
+// Registro de nuevos usuarios y creación/unión de empresa
 auth.post('/register', async (c) => {
   const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
   if (!checkRateLimit(ip)) {
@@ -70,10 +101,21 @@ auth.post('/register', async (c) => {
   }
 
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
-  const { name, email, password, phone } = body as { name?: string, email?: string, password?: string, phone?: string };
+  const {
+    name, email, password, phone,
+    registerMode, companyName, companySlug
+  } = body as {
+    name?: string, email?: string, password?: string, phone?: string,
+    registerMode?: 'new_company' | 'join_company', companyName?: string, companySlug?: string
+  };
 
-  if (!name || !email || !password || !phone) {
-    return c.json({ error: 'Nombre, teléfono, email y contraseña son requeridos' }, 400);
+  if (!name || !email || !password || !phone || !registerMode || !companySlug) {
+    return c.json({ error: 'Todos los campos incluyendo el modo de registro y el código de empresa son requeridos' }, 400);
+  }
+
+  // Validar formato de email
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    return c.json({ error: 'Formato de correo electrónico inválido' }, 400);
   }
 
   // Verificar si el correo ya existe
@@ -83,14 +125,58 @@ auth.post('/register', async (c) => {
   }
 
   const hashed = await bcrypt.hash(password, 10);
-  
-  // Insertar como pending y desactivado
-  await sql`
-    INSERT INTO users (name, phone, email, password, role, active)
-    VALUES (${name}, ${phone}, ${email}, ${hashed}, 'pending', false)
-  `;
+  const slugClean = companySlug.toLowerCase().replace(/[^a-z0-9-]/g, '').trim();
 
-  return c.json({ message: 'Registro exitoso. Tu cuenta está a la espera de aprobación por un administrador.' }, 201);
+  if (registerMode === 'new_company') {
+    if (!companyName) {
+      return c.json({ error: 'El nombre de la empresa es requerido' }, 400);
+    }
+
+    try {
+      await sql.begin(async (tx) => {
+        // Verificar si el slug ya existe
+        const [existingTenant] = await tx`SELECT id FROM tenants WHERE slug = ${slugClean} LIMIT 1`;
+        if (existingTenant) {
+          throw new Error('SLUG_ALREADY_IN_USE');
+        }
+
+        // Crear tenant
+        const [tenant] = await tx`
+          INSERT INTO tenants (name, slug)
+          VALUES (${companyName.trim()}, ${slugClean})
+          RETURNING id
+        `;
+
+        // Insertar operador auto-aprobado y activo por ser el creador de la empresa
+        await tx`
+          INSERT INTO users (name, phone, email, password, role, active, tenant_id)
+          VALUES (${name}, ${phone}, ${email}, ${hashed}, 'operator', true, ${tenant.id})
+        `;
+      });
+    } catch (err: any) {
+      if (err.message === 'SLUG_ALREADY_IN_USE') {
+        return c.json({ error: 'El código de empresa ya está en uso' }, 400);
+      }
+      console.error('[Register-Transaction] Error:', err);
+      return c.json({ error: 'Error al registrar la empresa' }, 500);
+    }
+
+    return c.json({ message: 'Empresa y cuenta de administrador creadas con éxito. Ya puedes iniciar sesión.' }, 201);
+  } else {
+    // Unirse a empresa existente
+    const [tenant] = await sql`SELECT id FROM tenants WHERE slug = ${slugClean} LIMIT 1`;
+    if (!tenant) {
+      return c.json({ error: 'El código de empresa especificado no existe' }, 404);
+    }
+
+    // Insertar como pending y desactivado
+    await sql`
+      INSERT INTO users (name, phone, email, password, role, active, tenant_id)
+      VALUES (${name}, ${phone}, ${email}, ${hashed}, 'pending', false, ${tenant.id})
+    `;
+
+    return c.json({ message: 'Registro exitoso. Tu cuenta está a la espera de aprobación por el administrador de la empresa.' }, 201);
+  }
 });
 
 export default auth;

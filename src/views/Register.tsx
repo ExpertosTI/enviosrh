@@ -10,11 +10,14 @@ export function Register() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const [registerMode, setRegisterMode] = useState<'new_company' | 'join_company'>('new_company');
   const [form, setForm] = useState({
     name: '',
     email: '',
     phone: '',
-    password: ''
+    password: '',
+    companyName: '',
+    companySlug: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,8 +27,17 @@ export function Register() {
     setLoading(true);
 
     try {
-      const res = await publicApi.post<any>('/auth/register', form);
-      setSuccess(res.message || 'Registro enviado con éxito. Espera a ser aprobado.');
+      const payload = {
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        password: form.password,
+        registerMode,
+        companyName: registerMode === 'new_company' ? form.companyName : undefined,
+        companySlug: form.companySlug
+      };
+      const res = await publicApi.post<any>('/auth/register', payload);
+      setSuccess(res.message || 'Registro completado con éxito.');
       setTimeout(() => navigate('/login'), 5000);
     } catch (err: any) {
       setError(err.message || 'Ocurrió un error al registrarse.');
@@ -62,7 +74,31 @@ export function Register() {
 
         {/* Card */}
         <div className="bg-[#13131f] border border-[#252540] rounded-2xl p-6 shadow-[0_20px_60px_rgba(0,0,0,.5)]">
-          <h2 className="text-base font-bold text-[#e8e8f4] mb-4">Registro</h2>
+          {/* Mode Switcher */}
+          <div className="flex bg-[#0b0b14] p-1 rounded-xl border border-[#252540] mb-5">
+            <button
+              type="button"
+              onClick={() => setRegisterMode('new_company')}
+              className={`flex-1 py-2 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-all border-0 cursor-pointer ${
+                registerMode === 'new_company'
+                  ? 'bg-[#5b8af9] text-[#0b0b14]'
+                  : 'bg-transparent text-[#6b6b8a] hover:text-[#e8e8f4]'
+              }`}
+            >
+              Nueva Empresa
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegisterMode('join_company')}
+              className={`flex-1 py-2 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-all border-0 cursor-pointer ${
+                registerMode === 'join_company'
+                  ? 'bg-[#5b8af9] text-[#0b0b14]'
+                  : 'bg-transparent text-[#6b6b8a] hover:text-[#e8e8f4]'
+              }`}
+            >
+              Unirse a Empresa
+            </button>
+          </div>
 
           {error && (
             <div className="mb-4 flex items-start gap-2.5 p-3.5 rounded-xl bg-[#2a0a0a] border border-[#ef4444]/30 text-[#ef4444] text-sm">
@@ -81,6 +117,37 @@ export function Register() {
           )}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {registerMode === 'new_company' && (
+              <div className="flex flex-col gap-1.5 animate-slide-up">
+                <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a]">Nombre de la Empresa</label>
+                <input
+                  required
+                  type="text"
+                  value={form.companyName}
+                  onChange={(e) => setForm({ ...form, companyName: e.target.value })}
+                  className={inputCls}
+                  placeholder="Ej. Express Logistic"
+                  disabled={loading || !!success}
+                />
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a]">Código de la Empresa (Slug)</label>
+              <input
+                required
+                type="text"
+                value={form.companySlug}
+                onChange={(e) => setForm({ ...form, companySlug: e.target.value })}
+                className={inputCls}
+                placeholder="Ej. express"
+                disabled={loading || !!success}
+              />
+              <span className="text-[9px] text-[#6b6b8a]">Único, sin espacios ni caracteres especiales.</span>
+            </div>
+
+            <hr className="border-[#252540] my-1" />
+
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a]">Nombre Completo</label>
               <input
@@ -143,9 +210,9 @@ export function Register() {
                   <svg className="w-4 h-4 animate-spin text-[#0b0b14]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
                   </svg>
-                  Creando cuenta…
+                  Procesando…
                 </>
-              ) : 'Registrarse'}
+              ) : registerMode === 'new_company' ? 'Crear Empresa y Cuenta' : 'Registrarse'}
             </button>
 
             <p className="text-center text-xs text-[#6b6b8a] mt-2">

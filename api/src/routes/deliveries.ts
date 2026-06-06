@@ -3,6 +3,7 @@ import sql from '../db/index.js';
 import { auth, operatorOnly } from '../middleware/auth.js';
 import { messengerMessage, customerMessage, waLink } from '../lib/whatsapp.js';
 import { sendCustomerTrackingEmail, sendMessengerAssignmentEmail, sendOperatorAlertEmail } from '../lib/email.js';
+import { isValidUuid } from '../lib/validation.js';
 
 const deliveries = new Hono();
 
@@ -36,7 +37,8 @@ deliveries.get('/', auth, async (c) => {
     JOIN customers c ON c.id = d.customer_id
     LEFT JOIN users u ON u.id = d.messenger_id
     WHERE
-      ${isMessenger ? sql`d.messenger_id = ${user.sub}` : sql`1=1`}
+      d.tenant_id = ${user.tenant_id}
+      AND ${isMessenger ? sql`d.messenger_id = ${user.sub}` : sql`1=1`}
       AND ${state ? sql`d.state = ${state}` : sql`d.state NOT IN ('cancelled')`}
       AND ${date ? sql`d.created_at::date = ${date}` : sql`1=1`}
     ORDER BY d.created_at DESC
@@ -47,6 +49,7 @@ deliveries.get('/', auth, async (c) => {
 
 // ── Crear envío ──────────────────────────────────────────────
 deliveries.post('/', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
   const body = await c.req.json<{
     customer: { name: string; phone: string; email?: string; address?: string; reference?: string; notes?: string };
     location_link?: string;
@@ -63,62 +66,78 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     return c.json({ error: 'Nombre y teléfono del cliente requeridos' }, 400);
   }
 
-  // Upsert cliente por teléfono (incluyendo correo)
-  const [cust] = await sql`
-    INSERT INTO customers (name, phone, address, reference, notes, email)
-    VALUES (${customer.name}, ${customer.phone}, ${customer.address ?? null}, ${customer.reference ?? null}, ${customer.notes ?? null}, ${customer.email ?? null})
-    ON CONFLICT (phone) DO UPDATE
-      SET name      = EXCLUDED.name,
-          address   = COALESCE(EXCLUDED.address, customers.address),
-          reference = COALESCE(EXCLUDED.reference, customers.reference),
-          email     = COALESCE(EXCLUDED.email, customers.email)
-    RETURNING id, name, phone, address, reference, email
-  `;
+  if (messenger_id && !isValidUuid(messenger_id)) {
+    return c.json({ error: 'ID de mensajero no válido' }, 400);
+  }
 
+  let cust: any;
+  let delivery: any;
   const state = messenger_id ? 'assigned' : 'draft';
 
-  const [delivery] = await sql`
-    INSERT INTO deliveries (
-      customer_id, location_link, delivery_fee,
-      messenger_id, state, assigned_at,
-      notes, external_ref, external_source, operator_id
-    ) VALUES (
-      ${cust.id},
-      ${location_link ?? null},
-      ${delivery_fee},
-      ${messenger_id ?? null},
-      ${state},
-      ${messenger_id ? sql`now()` : null},
-      ${notes ?? null},
-      ${external_ref ?? null},
-      ${external_source ?? null},
-      ${c.get('user').sub}
-    )
-    RETURNING *
-  `;
+  try {
+    await sql.begin(async (tx) => {
+      // Upsert cliente por teléfono Y tenant_id
+      const [cResult] = await tx`
+        INSERT INTO customers (tenant_id, name, phone, address, reference, notes, email)
+        VALUES (${user.tenant_id}, ${customer.name}, ${customer.phone}, ${customer.address ?? null}, ${customer.reference ?? null}, ${customer.notes ?? null}, ${customer.email ?? null})
+        ON CONFLICT (tenant_id, phone) DO UPDATE
+          SET name      = EXCLUDED.name,
+              address   = COALESCE(EXCLUDED.address, customers.address),
+              reference = COALESCE(EXCLUDED.reference, customers.reference),
+              email     = COALESCE(EXCLUDED.email, customers.email)
+        RETURNING id, name, phone, address, reference, email
+      `;
+      cust = cResult;
 
-  // Registrar evento inicial
-  await sql`
-    INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
-    VALUES (${delivery.id}, ${state}, ${c.get('user').sub}, 'operator', 'Envío creado')
-  `;
+      const [dResult] = await tx`
+        INSERT INTO deliveries (
+          tenant_id, customer_id, location_link, delivery_fee,
+          messenger_id, state, assigned_at,
+          notes, external_ref, external_source, operator_id
+        ) VALUES (
+          ${user.tenant_id},
+          ${cust.id},
+          ${location_link ?? null},
+          ${delivery_fee},
+          ${messenger_id ?? null},
+          ${state},
+          ${messenger_id ? tx`now()` : null},
+          ${notes ?? null},
+          ${external_ref ?? null},
+          ${external_source ?? null},
+          ${user.sub}
+        )
+        RETURNING *
+      `;
+      delivery = dResult;
+
+      // Registrar evento inicial
+      await tx`
+        INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
+        VALUES (${delivery.id}, ${state}, ${user.sub}, 'operator', 'Envío creado')
+      `;
+    });
+  } catch (err) {
+    console.error('[CreateDelivery-Transaction] Error:', err);
+    return c.json({ error: 'Error al registrar el envío' }, 500);
+  }
 
   // ── Enviar Notificación por Correo al Cliente ───────────────────────
   if (cust.email) {
     sendCustomerTrackingEmail(cust.email, cust.name, delivery.customer_token, {
       address: cust.address ?? delivery.address_override ?? 'Ver portal de seguimiento'
-    }).catch(err => console.error('[Email-Client] Error:', err));
+    }).catch((err: any) => console.error('[Email-Client] Error:', err));
   }
 
   // ── Enviar Notificación por Correo al Mensajero ─────────────────────
   if (messenger_id) {
-    const [messenger] = await sql`SELECT email, name FROM users WHERE id = ${messenger_id} LIMIT 1`;
+    const [messenger] = await sql`SELECT email, name FROM users WHERE id = ${messenger_id} AND tenant_id = ${user.tenant_id} LIMIT 1`;
     if (messenger && messenger.email) {
       sendMessengerAssignmentEmail(messenger.email, messenger.name, delivery.messenger_token, {
         customerName: cust.name,
         address: cust.address ?? delivery.address_override ?? 'Ver portal de entrega',
         fee: Number(delivery.delivery_fee)
-      }).catch(err => console.error('[Email-Messenger] Error:', err));
+      }).catch((err: any) => console.error('[Email-Messenger] Error:', err));
     }
   }
 
@@ -129,6 +148,7 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
 deliveries.get('/:id', auth, async (c) => {
   const user = c.get('user');
   const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
 
   const [row] = await sql`
     SELECT
@@ -152,7 +172,7 @@ deliveries.get('/:id', auth, async (c) => {
     FROM deliveries d
     JOIN customers c ON c.id = d.customer_id
     LEFT JOIN users u ON u.id = d.messenger_id
-    WHERE d.id = ${id}
+    WHERE d.id = ${id} AND d.tenant_id = ${user.tenant_id}
     LIMIT 1
   `;
   if (!row) return c.json({ error: 'No encontrado' }, 404);
@@ -167,7 +187,9 @@ deliveries.get('/:id', auth, async (c) => {
 
 // ── Detalle de envío con URLs de WhatsApp ───────────────────
 deliveries.get('/:id/share', auth, async (c) => {
+  const user = c.get('user');
   const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
 
   const [row] = await sql`
     SELECT d.*, c.name AS customer_name, c.phone AS customer_phone,
@@ -176,7 +198,7 @@ deliveries.get('/:id/share', auth, async (c) => {
     FROM deliveries d
     JOIN customers c ON c.id = d.customer_id
     LEFT JOIN users u ON u.id = d.messenger_id
-    WHERE d.id = ${id}
+    WHERE d.id = ${id} AND d.tenant_id = ${user.tenant_id}
   `;
   if (!row) return c.json({ error: 'No encontrado' }, 404);
 
@@ -210,8 +232,13 @@ deliveries.get('/:id/share', auth, async (c) => {
 
 // ── Asignar / reasignar mensajero ────────────────────────────
 deliveries.patch('/:id/assign', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
   const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
   const { messenger_id } = await c.req.json<{ messenger_id: string | null }>();
+  if (messenger_id && !isValidUuid(messenger_id)) {
+    return c.json({ error: 'ID de mensajero no válido' }, 400);
+  }
 
   const state = messenger_id ? 'assigned' : 'draft';
 
@@ -220,21 +247,21 @@ deliveries.patch('/:id/assign', auth, operatorOnly, async (c) => {
     SET messenger_id = ${messenger_id || null},
         state = ${state},
         assigned_at = ${messenger_id ? sql`now()` : null}
-    WHERE id = ${id}
+    WHERE id = ${id} AND tenant_id = ${user.tenant_id}
     RETURNING id, state, messenger_id, customer_token, messenger_token, customer_id, delivery_fee, address_override
   `;
   if (!updated) return c.json({ error: 'No encontrado' }, 404);
 
   await sql`
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
-    VALUES (${id}, 'assigned', ${c.get('user').sub}, 'operator', 'Mensajero asignado')
+    VALUES (${id}, 'assigned', ${user.sub}, 'operator', 'Mensajero asignado')
   `;
 
   // ── Notificar al mensajero y cliente por correo ─────────────────────
   if (messenger_id) {
     Promise.all([
-      sql`SELECT name, address, email FROM customers WHERE id = ${updated.customer_id} LIMIT 1`,
-      sql`SELECT email, name FROM users WHERE id = ${messenger_id} LIMIT 1`
+      sql`SELECT name, address, email FROM customers WHERE id = ${updated.customer_id} AND tenant_id = ${user.tenant_id} LIMIT 1`,
+      sql`SELECT email, name FROM users WHERE id = ${messenger_id} AND tenant_id = ${user.tenant_id} LIMIT 1`
     ]).then(([[cust], [messenger]]) => {
       if (messenger && messenger.email) {
         sendMessengerAssignmentEmail(messenger.email, messenger.name, updated.messenger_token, {
@@ -258,9 +285,10 @@ deliveries.patch('/:id/assign', auth, operatorOnly, async (c) => {
 deliveries.patch('/:id/in-transit', auth, async (c) => {
   const user = c.get('user');
   const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
 
   const [delivery] = await sql`
-    SELECT id, messenger_id FROM deliveries WHERE id = ${id}
+    SELECT id, messenger_id FROM deliveries WHERE id = ${id} AND tenant_id = ${user.tenant_id}
   `;
   if (!delivery) return c.json({ error: 'No encontrado' }, 404);
   if (user.role === 'messenger' && delivery.messenger_id !== user.sub) {
@@ -268,7 +296,7 @@ deliveries.patch('/:id/in-transit', auth, async (c) => {
   }
 
   await sql`
-    UPDATE deliveries SET state = 'in_transit' WHERE id = ${id}
+    UPDATE deliveries SET state = 'in_transit' WHERE id = ${id} AND tenant_id = ${user.tenant_id}
   `;
   await sql`
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role)
@@ -281,10 +309,11 @@ deliveries.patch('/:id/in-transit', auth, async (c) => {
 deliveries.patch('/:id/deliver', auth, async (c) => {
   const user = c.get('user');
   const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
   const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
 
   const [delivery] = await sql`
-    SELECT id, messenger_id FROM deliveries WHERE id = ${id}
+    SELECT id, messenger_id FROM deliveries WHERE id = ${id} AND tenant_id = ${user.tenant_id}
   `;
   if (!delivery) return c.json({ error: 'No encontrado' }, 404);
   if (user.role === 'messenger' && delivery.messenger_id !== user.sub) {
@@ -294,7 +323,7 @@ deliveries.patch('/:id/deliver', auth, async (c) => {
   await sql`
     UPDATE deliveries
     SET state = 'delivered', delivered_at = now(), messenger_note = ${note ?? null}
-    WHERE id = ${id}
+    WHERE id = ${id} AND tenant_id = ${user.tenant_id}
   `;
   await sql`
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
@@ -305,15 +334,17 @@ deliveries.patch('/:id/deliver', auth, async (c) => {
 
 // ── Cancelar ─────────────────────────────────────────────────
 deliveries.patch('/:id/cancel', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
   const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
   const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
 
   await sql`
-    UPDATE deliveries SET state = 'cancelled' WHERE id = ${id}
+    UPDATE deliveries SET state = 'cancelled' WHERE id = ${id} AND tenant_id = ${user.tenant_id}
   `;
   await sql`
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
-    VALUES (${id}, 'cancelled', ${c.get('user').sub}, 'operator', ${note ?? null})
+    VALUES (${id}, 'cancelled', ${user.sub}, 'operator', ${note ?? null})
   `;
 
   // ── Notificar cancelación ──────────────────────────────────────────
@@ -323,7 +354,7 @@ deliveries.patch('/:id/cancel', auth, operatorOnly, async (c) => {
     FROM deliveries d
     JOIN customers c ON c.id = d.customer_id
     LEFT JOIN users u ON u.id = d.messenger_id
-    WHERE d.id = ${id}
+    WHERE d.id = ${id} AND d.tenant_id = ${user.tenant_id}
     LIMIT 1
   `.then(([info]) => {
     if (!info) return;

@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { getSession } from './lib/auth';
+import { applyTenantTheme } from './lib/theme';
 import { Login } from './views/Login';
 import { Register } from './views/Register';
 import { OperatorDashboard } from './views/operator/Dashboard';
@@ -26,6 +28,13 @@ function HomeRedirect() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const user = getSession();
+    if (user?.tenant) {
+      applyTenantTheme(user.tenant);
+    }
+  }, []);
+
   return (
     <Routes>
       {/* Público */}

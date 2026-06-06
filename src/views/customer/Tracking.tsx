@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { publicApi } from '../../lib/api';
-import type { DeliveryState } from '../../types';
+import type { DeliveryState, Tenant } from '../../types';
 import { STATE_LABEL } from '../../types';
 import { IconCheck, IconMotorbike, IconPackage, IconStar } from '../../components/Icons';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { applyTenantTheme } from '../../lib/theme';
 import L from 'leaflet';
 
 interface PublicDelivery {
@@ -25,6 +26,7 @@ interface PublicDelivery {
   pre_confirmed: boolean;
   can_confirm: boolean;
   rating: number | null;
+  tenant?: Tenant;
 }
 
 const STEPS: { state: DeliveryState; label: string; icon: React.ReactNode }[] = [
@@ -96,6 +98,15 @@ export function CustomerTracking() {
   useEffect(() => {
     loadDelivery();
   }, [token]);
+
+  useEffect(() => {
+    if (delivery?.tenant) {
+      applyTenantTheme(delivery.tenant);
+    }
+    return () => {
+      applyTenantTheme(null);
+    };
+  }, [delivery?.tenant]);
 
   // Polling cada 5 segundos para actualizar ubicación del mensajero
   useEffect(() => {
@@ -255,11 +266,17 @@ export function CustomerTracking() {
       <div className="min-h-screen bg-slate-50 dark:bg-[#0b0b14] flex flex-col justify-between transition-colors duration-200">
         {/* Header */}
         <header className="bg-white dark:bg-[#13131f]/95 border-b border-slate-200 dark:border-[#252540] px-4 py-4 flex items-center justify-between sticky top-0 z-20 transition-colors duration-200">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#5b8af9]/20 flex items-center justify-center">
-              <IconPackage size={16} color="#5b8af9" />
-            </div>
-            <span className="font-bold text-sm text-slate-800 dark:text-[#e8e8f4]">EnvíosRH</span>
+          <div className="flex items-center gap-2.5">
+            {delivery?.tenant?.logo_url ? (
+              <img src={delivery.tenant.logo_url} alt="Logo" className="w-7 h-7 object-contain rounded" />
+            ) : (
+              <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
+                <IconPackage size={16} className="text-primary" />
+              </div>
+            )}
+            <span className="font-bold text-sm text-slate-800 dark:text-[#e8e8f4]">
+              {delivery?.tenant?.name ?? 'EnvíosRH'}
+            </span>
           </div>
           <ThemeToggle />
         </header>
@@ -339,11 +356,17 @@ export function CustomerTracking() {
     <div className="min-h-screen bg-slate-50 dark:bg-[#0b0b14] flex flex-col transition-colors duration-200">
       {/* Header */}
       <header className="bg-white dark:bg-[#13131f]/95 backdrop-blur border-b border-slate-200 dark:border-[#252540] px-4 py-3 flex items-center justify-between sticky top-0 z-20 transition-colors duration-200">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-[#5b8af9]/20 flex items-center justify-center">
-            <IconPackage size={16} color="#5b8af9" />
-          </div>
-          <span className="font-bold text-sm text-slate-800 dark:text-[#e8e8f4]">EnvíosRH</span>
+        <div className="flex items-center gap-2.5">
+          {delivery?.tenant?.logo_url ? (
+            <img src={delivery.tenant.logo_url} alt="Logo" className="w-7 h-7 object-contain rounded" />
+          ) : (
+            <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
+              <IconPackage size={16} className="text-primary" />
+            </div>
+          )}
+          <span className="font-bold text-sm text-slate-800 dark:text-[#e8e8f4]">
+            {delivery?.tenant?.name ?? 'EnvíosRH'}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden sm:inline text-xs text-slate-500 dark:text-[#6b6b8a] font-semibold uppercase tracking-wider">
