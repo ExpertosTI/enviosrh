@@ -111,8 +111,10 @@ export function AppShell({ children, nav }: AppShellProps) {
   }
 
   function handleLogout() {
-    logout();
-    navigate('/login');
+    if (window.confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+      logout();
+      navigate('/login');
+    }
   }
 
   return (

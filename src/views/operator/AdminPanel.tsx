@@ -1,8 +1,10 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { api } from '../../lib/api';
 import { AppShell, PageHeader } from '../../components/AppShell';
 import { TenantSettings } from './TenantSettings';
 import { getSession } from '../../lib/auth';
+import L from 'leaflet';
+
 
 // ── Tipos ────────────────────────────────────────────────────
 interface StateCount { state: string; count: number; }
@@ -116,6 +118,9 @@ export function AdminPanel() {
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState('');
   const [createdCredentials, setCreatedCredentials] = useState<{ email: string; tempPassword: string; slug: string } | null>(null);
+
+  // ── Modal de Mapa de Mensajeros ──
+  const [selectedMessengerForMap, setSelectedMessengerForMap] = useState<{ name: string; latitude: number; longitude: number; updatedAt?: string | null } | null>(null);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -382,15 +387,22 @@ export function AdminPanel() {
                           </td>
                           <td className="px-4 py-3 text-center">
                             {m.latitude && m.longitude ? (
-                              <a
-                                href={`https://www.google.com/maps?q=${m.latitude},${m.longitude}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-[#22c55e]/10 text-green-600 dark:text-[#22c55e] text-[10px] font-bold hover:opacity-80 transition-opacity"
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  setSelectedMessengerForMap({
+                                    name: m.name,
+                                    latitude: Number(m.latitude),
+                                    longitude: Number(m.longitude),
+                                    updatedAt: m.location_updated_at
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-[#22c55e]/10 text-green-600 dark:text-[#22c55e] text-[10px] font-bold hover:opacity-80 transition-opacity border-0 cursor-pointer"
                               >
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse" />
                                 Live
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-[10px] text-slate-300 dark:text-[#3a3a58]">—</span>
                             )}
@@ -663,6 +675,106 @@ export function AdminPanel() {
           </div>
         </div>
       )}
+
+      {selectedMessengerForMap && (
+        <MessengerMapModal
+          messenger={selectedMessengerForMap}
+          onClose={() => setSelectedMessengerForMap(null)}
+        />
+      )}
     </AppShell>
+  );
+}
+
+// ── Componente Modal de Mapa en Vivo del Mensajero ──────────────────
+interface MessengerMapModalProps {
+  messenger: { name: string; latitude: number; longitude: number; updatedAt?: string | null };
+  onClose: () => void;
+}
+
+function MessengerMapModal({ messenger, onClose }: MessengerMapModalProps) {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+
+    // Inicializar mapa de Leaflet
+    mapRef.current = L.map(mapContainerRef.current, {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([messenger.latitude, messenger.longitude], 15);
+
+    const isDark = document.documentElement.classList.contains('dark');
+    L.tileLayer(
+      isDark
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      { maxZoom: 20 }
+    ).addTo(mapRef.current);
+
+    // Pin personalizado del mensajero
+    const messengerIcon = L.divIcon({
+      className: 'messenger-map-pin',
+      html: `<div class="w-8 h-8 rounded-full bg-[#13131f] border-2 border-[#5b8af9] flex items-center justify-center shadow-[0_0_12px_rgba(91,138,249,0.7)]">
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5b8af9" stroke-width="3">
+                 <circle cx="12" cy="5" r="3" />
+                 <path d="M5 12h14l-4 8H9l-4-8z" />
+               </svg>
+             </div>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    });
+
+    L.marker([messenger.latitude, messenger.longitude], { icon: messengerIcon })
+      .addTo(mapRef.current)
+      .bindPopup(`<b class="font-sans text-xs text-slate-800">🛵 ${messenger.name}</b>`)
+      .openPopup();
+
+    setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    }, 250);
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, [messenger]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl transition-all animate-in zoom-in-95 duration-200 flex flex-col h-[400px]">
+        {/* Header */}
+        <div className="p-4 border-b border-slate-100 dark:border-[#252540] flex justify-between items-center bg-white dark:bg-[#13131f]">
+          <div>
+            <h3 className="font-extrabold text-sm text-slate-800 dark:text-[#e8e8f4]">
+              Ubicación en Vivo de {messenger.name}
+            </h3>
+            {messenger.updatedAt && (
+              <p className="text-[10px] text-slate-400 dark:text-[#6b6b8a] mt-0.5">
+                Última actualización: {new Date(messenger.updatedAt).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </p>
+            )}
+          </div>
+          <button 
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 dark:text-[#6b6b8a] dark:hover:text-[#e8e8f4] bg-transparent border-0 cursor-pointer p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#252540] transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Map Container */}
+        <div className="flex-1 relative bg-slate-100 dark:bg-[#0b0b14]">
+          <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
+        </div>
+      </div>
+    </div>
   );
 }
