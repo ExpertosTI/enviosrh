@@ -64,6 +64,7 @@ portal.get('/c/:token', async (c) => {
       d.customer_confirmed, d.rating,
       d.messenger_note, d.notes,
       d.pre_confirmed, d.address_override,
+      d.total_amount, d.products,
       c.name AS customer_name,
       c.phone AS customer_phone,
       c.address AS customer_address,
@@ -110,6 +111,8 @@ portal.get('/c/:token', async (c) => {
     delivered_at: row.delivered_at,
     customer_confirmed: row.customer_confirmed,
     pre_confirmed: row.pre_confirmed,
+    total_amount: Number(row.total_amount || 0),
+    products: row.products ?? null,
     can_confirm: row.state === 'delivered' && !row.customer_confirmed,
     rating: row.rating,
     tenant: {
@@ -228,7 +231,7 @@ portal.get('/m/:token', async (c) => {
   const [row] = await sql`
     SELECT
       d.id, d.state, d.delivery_fee, d.location_link,
-      d.address_override, d.notes,
+      d.address_override, d.notes, d.total_amount, d.products,
       c.name AS customer_name, c.phone AS customer_phone,
       c.address AS customer_address, c.reference AS customer_reference,
       t.name AS tenant_name,
@@ -261,6 +264,8 @@ portal.get('/m/:token', async (c) => {
     id: row.id,
     state: row.state,
     delivery_fee: Number(row.delivery_fee),
+    total_amount: Number(row.total_amount || 0),
+    products: row.products ?? null,
     customer: {
       name: row.customer_name,
       phone: row.customer_phone,

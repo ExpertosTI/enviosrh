@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { Delivery, DeliveryState } from '../../types';
@@ -29,13 +29,25 @@ export function MessengerDashboard() {
   const [error, setError] = useState('');
   const { status: gpsStatus, coords, accuracy, requestGps } = useGps();
 
-  useEffect(() => {
-    setLoading(true);
-    api.get<Delivery[]>('/deliveries')
-      .then((ds) => setDeliveries(ds.filter((d) => d.state !== 'cancelled')))
-      .catch((err) => setError(err instanceof Error ? err.message : 'Error'))
-      .finally(() => setLoading(false));
+  const loadDeliveries = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    try {
+      const ds = await api.get<Delivery[]>('/deliveries');
+      setDeliveries(ds.filter((d) => d.state !== 'cancelled'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al obtener envíos');
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadDeliveries();
+    const interval = setInterval(() => {
+      loadDeliveries(true);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [loadDeliveries]);
 
   const active   = deliveries.filter((d) => d.state === 'in_transit');
   const assigned = deliveries.filter((d) => d.state === 'assigned');

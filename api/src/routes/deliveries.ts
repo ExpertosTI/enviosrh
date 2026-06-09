@@ -22,6 +22,7 @@ deliveries.get('/', auth, async (c) => {
       d.messenger_note, d.notes,
       d.external_ref, d.external_source,
       d.customer_confirmed, d.rating,
+      d.total_amount, d.products,
       c.id    AS customer_id,
       c.name  AS customer_name,
       c.phone AS customer_phone,
@@ -44,7 +45,25 @@ deliveries.get('/', auth, async (c) => {
     ORDER BY d.created_at DESC
     LIMIT 200
   `;
-  return c.json(rows);
+});
+
+// Buscar cliente por número de teléfono
+deliveries.get('/customer-by-phone/:phone', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
+  const { phone } = c.req.param();
+
+  const [customer] = await sql`
+    SELECT id, name, phone, email, address, reference, notes
+    FROM customers
+    WHERE phone = ${phone.trim()} AND tenant_id = ${user.tenant_id}
+    LIMIT 1
+  `;
+
+  if (!customer) {
+    return c.json({ found: false });
+  }
+
+  return c.json({ found: true, customer });
 });
 
 // ── Crear envío ──────────────────────────────────────────────
@@ -58,9 +77,11 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     notes?: string;
     external_ref?: string;
     external_source?: string;
+    total_amount?: number;
+    products?: string;
   }>();
 
-  const { customer, location_link, delivery_fee = 0, messenger_id, notes, external_ref, external_source } = body;
+  const { customer, location_link, delivery_fee = 0, messenger_id, notes, external_ref, external_source, total_amount = 0, products } = body;
 
   if (!customer?.name || !customer?.phone) {
     return c.json({ error: 'Nombre y teléfono del cliente requeridos' }, 400);
@@ -93,7 +114,8 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
         INSERT INTO deliveries (
           tenant_id, customer_id, location_link, delivery_fee,
           messenger_id, state, assigned_at,
-          notes, external_ref, external_source, operator_id
+          notes, external_ref, external_source, operator_id,
+          total_amount, products
         ) VALUES (
           ${user.tenant_id},
           ${cust.id},
@@ -105,7 +127,9 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
           ${notes ?? null},
           ${external_ref ?? null},
           ${external_source ?? null},
-          ${user.sub}
+          ${user.sub},
+          ${total_amount},
+          ${products ?? null}
         )
         RETURNING *
       `;
@@ -158,6 +182,7 @@ deliveries.get('/:id', auth, async (c) => {
       d.messenger_note, d.notes,
       d.external_ref, d.external_source,
       d.customer_confirmed, d.rating,
+      d.total_amount, d.products,
       c.id    AS customer_id,
       c.name  AS customer_name,
       c.phone AS customer_phone,
@@ -227,6 +252,8 @@ deliveries.get('/:id/share', auth, async (c) => {
     messenger_token_url: `${process.env.APP_URL}/m-portal/${row.messenger_token}`,
     whatsapp_customer: custWa,
     whatsapp_messenger: messWa,
+    total_amount: Number(row.total_amount || 0),
+    products: row.products ?? null,
   });
 });
 

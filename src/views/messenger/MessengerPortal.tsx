@@ -22,6 +22,8 @@ interface PublicMessengerDelivery {
   nav_google: string;
   nav_waze: string;
   tenant?: Tenant;
+  total_amount?: number;
+  products?: string | null;
 }
 
 type GpsState = 'idle' | 'requesting' | 'active' | 'denied' | 'error';
@@ -87,6 +89,10 @@ export function MessengerPortal() {
 
   useEffect(() => {
     loadDelivery();
+    const interval = setInterval(() => {
+      loadDelivery();
+    }, 5000);
+    return () => clearInterval(interval);
   }, [loadDelivery]);
 
   // Aplicar tema del tenant
@@ -497,6 +503,24 @@ export function MessengerPortal() {
             <p className="text-xs text-[#f59e0b] mt-1.5 font-medium">📍 {delivery.customer.reference}</p>
           )}
         </div>
+
+        {/* Productos y Monto Total */}
+        {(delivery.products || (delivery.total_amount !== undefined && delivery.total_amount > 0)) && (
+          <div className="bg-[#0b0b14] border border-[#252540]/60 rounded-xl p-3 flex flex-col gap-2">
+            {delivery.products && (
+              <div>
+                <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wider font-semibold">Productos del pedido</div>
+                <p className="text-xs text-[#e8e8f4] mt-0.5 font-medium">{delivery.products}</p>
+              </div>
+            )}
+            {delivery.total_amount !== undefined && delivery.total_amount > 0 && (
+              <div className="flex justify-between items-center border-t border-[#252540]/40 pt-2">
+                <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wider font-semibold">Monto del pedido</div>
+                <div className="text-xs font-bold text-[#22c55e]">RD$ {Number(delivery.total_amount).toFixed(2)}</div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Notas */}
         {delivery.notes && (

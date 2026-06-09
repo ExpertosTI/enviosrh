@@ -27,6 +27,8 @@ interface PublicDelivery {
   can_confirm: boolean;
   rating: number | null;
   tenant?: Tenant;
+  total_amount?: number;
+  products?: string | null;
 }
 
 const STEPS: { state: DeliveryState; label: string; icon: React.ReactNode }[] = [
@@ -320,6 +322,22 @@ export function CustomerTracking() {
                 </p>
               </div>
 
+              {delivery.total_amount !== undefined && delivery.total_amount > 0 && (
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider">Monto del Pedido</span>
+                  <p className="text-sm font-extrabold text-[#22c55e] mt-0.5">
+                    RD$ {delivery.total_amount.toFixed(2)}
+                  </p>
+                </div>
+              )}
+
+              {delivery.products && (
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider">Productos</span>
+                  <p className="text-xs text-slate-800 dark:text-[#e8e8f4] mt-0.5 font-medium leading-relaxed">{delivery.products}</p>
+                </div>
+              )}
+
               {delivery.notes && (
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider">Notas Adicionales</span>
@@ -447,6 +465,24 @@ export function CustomerTracking() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* Detalles del Pedido (Productos y Monto) */}
+            {(delivery.products || (delivery.total_amount !== undefined && delivery.total_amount > 0)) && (
+              <div className="bg-slate-50 dark:bg-[#0b0b14] border border-slate-100 dark:border-[#252540]/60 rounded-xl p-4 flex flex-col gap-3 transition-colors duration-200">
+                {delivery.products && (
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider">Productos</span>
+                    <p className="text-xs text-slate-800 dark:text-[#e8e8f4] mt-1 font-semibold leading-relaxed">{delivery.products}</p>
+                  </div>
+                )}
+                {delivery.total_amount !== undefined && delivery.total_amount > 0 && (
+                  <div className="flex justify-between items-center border-t border-slate-200/50 dark:border-[#252540]/40 pt-2.5">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider">Monto Total del Pedido</span>
+                    <p className="text-sm font-extrabold text-[#22c55e]">RD$ {delivery.total_amount.toFixed(2)}</p>
+                  </div>
+                )}
               </div>
             )}
 

@@ -16,12 +16,14 @@ interface Form {
   delivery_fee: string;
   notes: string;
   messenger_id: string;
+  total_amount: string;
+  products: string;
 }
 
 const EMPTY: Form = {
   customer_name: '', customer_phone: '', customer_email: '', customer_address: '',
   customer_reference: '', location_link: '', delivery_fee: '',
-  notes: '', messenger_id: '',
+  notes: '', messenger_id: '', total_amount: '', products: '',
 };
 
 function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
@@ -57,9 +59,46 @@ export function NewDelivery() {
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
 
+  const [searchingCustomer, setSearchingCustomer] = useState(false);
+  const [customerMessage, setCustomerMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
+
   useEffect(() => {
     api.get<Messenger[]>('/messengers').then(setMessengers).catch(() => {});
   }, []);
+
+  // Buscar cliente por teléfono automáticamente al completar los dígitos
+  useEffect(() => {
+    const cleanPhone = form.customer_phone.replace(/\D/g, '');
+    if (cleanPhone.length >= 10) {
+      const delayDebounceFn = setTimeout(() => {
+        setSearchingCustomer(true);
+        setCustomerMessage(null);
+        api.get<{ found: boolean; customer?: any }>(`/deliveries/customer-by-phone/${cleanPhone}`)
+          .then((res) => {
+            if (res.found && res.customer) {
+              setForm((prev) => ({
+                ...prev,
+                customer_name: res.customer.name || '',
+                customer_email: res.customer.email || '',
+                customer_address: res.customer.address || '',
+                customer_reference: res.customer.reference || '',
+              }));
+              setCustomerMessage({ type: 'success', text: `✨ Cliente encontrado: ${res.customer.name}` });
+            } else {
+              setCustomerMessage({ type: 'info', text: 'ℹ️ Cliente nuevo. Complete los datos para registrarlo.' });
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            setSearchingCustomer(false);
+          });
+      }, 500);
+
+      return () => clearTimeout(delayDebounceFn);
+    } else {
+      setCustomerMessage(null);
+    }
+  }, [form.customer_phone]);
 
   // Inicializar Leaflet map para ubicar con pin
   useEffect(() => {
@@ -149,6 +188,8 @@ export function NewDelivery() {
         delivery_fee: form.delivery_fee ? Number(form.delivery_fee) : 0,
         notes: form.notes || undefined,
         messenger_id: form.messenger_id || undefined,
+        total_amount: form.total_amount ? Number(form.total_amount) : 0,
+        products: form.products || undefined,
       };
       const { id } = await api.post<{ id: string }>('/deliveries', body);
       nav(`/operador/envio/${id}/compartir`);
@@ -176,7 +217,28 @@ export function NewDelivery() {
               <input className={inputCls} value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} placeholder="Nombre completo" autoComplete="off" />
             </Field>
             <Field label="Teléfono *">
-              <input className={inputCls} type="tel" value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="809-000-0000" required autoComplete="off" />
+              <div className="relative">
+                <input
+                  className={inputCls}
+                  type="tel"
+                  value={form.customer_phone}
+                  onChange={(e) => set('customer_phone', e.target.value)}
+                  placeholder="809-000-0000"
+                  required
+                  autoComplete="off"
+                />
+                {searchingCustomer && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#5b8af9] opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#5b8af9]"></span>
+                  </span>
+                )}
+              </div>
+              {customerMessage && (
+                <p className={`text-[11px] font-semibold mt-1 ${customerMessage.type === 'success' ? 'text-green-500' : 'text-[#a75bf9]'}`}>
+                  {customerMessage.text}
+                </p>
+              )}
             </Field>
             <Field label="Correo electrónico" hint="Para notificaciones de seguimiento">
               <input className={inputCls} type="email" value={form.customer_email} onChange={(e) => set('customer_email', e.target.value)} placeholder="correo@cliente.com" autoComplete="off" />
@@ -211,6 +273,12 @@ export function NewDelivery() {
             </Field>
             <Field label="Costo de envío ($)">
               <input className={inputCls} type="number" min="0" step="0.01" value={form.delivery_fee} onChange={(e) => set('delivery_fee', e.target.value)} placeholder="0.00" />
+            </Field>
+            <Field label="Monto total del pedido ($)">
+              <input className={inputCls} type="number" min="0" step="0.01" value={form.total_amount} onChange={(e) => set('total_amount', e.target.value)} placeholder="0.00" />
+            </Field>
+            <Field label="Productos del pedido" className="md:col-span-2">
+              <input className={inputCls} value={form.products} onChange={(e) => set('products', e.target.value)} placeholder="Ej. 2x Zapatos Nike, 1x Gorra Puma..." />
             </Field>
             <Field label="Notas internas" className="md:col-span-2">
               <textarea className={inputCls + ' resize-none min-h-[80px]'} value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Instrucciones especiales…" rows={3} />

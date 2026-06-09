@@ -53,6 +53,8 @@ export interface Delivery {
   messenger_latitude?: number | string | null;
   messenger_longitude?: number | string | null;
   messenger_location_updated_at?: string | null;
+  total_amount?: number;
+  products?: string | null;
 }
 
 export type DeliveryState = 'draft' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled';

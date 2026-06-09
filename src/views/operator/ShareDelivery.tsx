@@ -175,7 +175,13 @@ export function ShareDelivery() {
               <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Notas" value={delivery.notes} />
             )}
             {Number(delivery.delivery_fee) > 0 && (
-              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Costo envío" value={`$${Number(delivery.delivery_fee).toFixed(2)}`} />
+              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Costo envío" value={`RD$ ${Number(delivery.delivery_fee).toFixed(2)}`} />
+            )}
+            {delivery.total_amount !== undefined && Number(delivery.total_amount) > 0 && (
+              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Monto total del pedido" value={`RD$ ${Number(delivery.total_amount).toFixed(2)}`} />
+            )}
+            {delivery.products && (
+              <InfoRow icon={<IconPackage size={15} color="#6b6b8a" />} label="Productos" value={delivery.products} />
             )}
           </div>
         </div>
