@@ -21,3 +21,11 @@ export function logout() {
   clearToken();
   localStorage.removeItem(USER_KEY);
 }
+
+export function updateSessionUser(updatedFields: Partial<User>) {
+  const current = getSession();
+  if (current) {
+    const updated = { ...current, ...updatedFields };
+    localStorage.setItem(USER_KEY, JSON.stringify(updated));
+  }
+}

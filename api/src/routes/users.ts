@@ -73,6 +73,72 @@ users.post('/', auth, operatorOnly, async (c) => {
   }, 201);
 });
 
+// Obtener perfil del propio usuario autenticado (Operador o Mensajero)
+users.get('/profile', auth, async (c) => {
+  const session = c.get('user');
+  const [profile] = await sql`
+    SELECT id, name, email, phone, role
+    FROM users
+    WHERE id = ${session.sub} AND tenant_id = ${session.tenant_id}
+    LIMIT 1
+  `;
+  if (!profile) return c.json({ error: 'Usuario no encontrado' }, 404);
+  return c.json(profile);
+});
+
+// Actualizar el perfil del propio usuario autenticado (Operador o Mensajero)
+users.patch('/profile', auth, async (c) => {
+  const session = c.get('user');
+  const { name, phone, email, password } = await c.req.json<{
+    name?: string;
+    phone?: string;
+    email?: string;
+    password?: string;
+  }>();
+
+  const userId = session.sub;
+
+  if (email) {
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return c.json({ error: 'Formato de correo electrónico inválido' }, 400);
+    }
+    const [existing] = await sql`
+      SELECT id FROM users WHERE email = ${email.trim().toLowerCase()} AND id != ${userId} LIMIT 1
+    `;
+    if (existing) {
+      return c.json({ error: 'El correo electrónico ya está en uso' }, 400);
+    }
+  }
+
+  const updates: Record<string, any> = {};
+  if (name !== undefined) updates.name = name.trim();
+  if (phone !== undefined) updates.phone = phone.trim() || null;
+  if (email !== undefined) updates.email = email.trim().toLowerCase();
+
+  if (password) {
+    if (password.length < 6) {
+      return c.json({ error: 'La contraseña debe tener al menos 6 caracteres' }, 400);
+    }
+    updates.password = await bcrypt.hash(password, 10);
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return c.json({ error: 'No se enviaron datos para actualizar' }, 400);
+  }
+
+  const [updatedUser] = await sql`
+    UPDATE users
+    SET ${sql(updates)}
+    WHERE id = ${userId}
+    RETURNING id, name, email, phone, role
+  `;
+
+  return c.json({
+    message: 'Perfil actualizado correctamente',
+    user: updatedUser
+  });
+});
+
 // Listar usuarios pendientes
 users.get('/pending', auth, operatorOnly, async (c) => {
   const user = c.get('user');
