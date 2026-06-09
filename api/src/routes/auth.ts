@@ -35,11 +35,11 @@ auth.post('/login', async (c) => {
   }
 
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
-  const email = typeof body.email === 'string' ? body.email : undefined;
+  const usernameOrEmail = typeof body.email === 'string' ? body.email : (typeof body.username === 'string' ? body.username : undefined);
   const password = typeof body.password === 'string' ? body.password : undefined;
 
-  if (!email || !password) {
-    return c.json({ error: 'Email y contraseña requeridos' }, 400);
+  if (!usernameOrEmail || !password) {
+    return c.json({ error: 'Usuario y contraseña requeridos' }, 400);
   }
 
   const [user] = await sql`
@@ -51,7 +51,7 @@ auth.post('/login', async (c) => {
            t.address AS tenant_address
     FROM users u
     JOIN tenants t ON t.id = u.tenant_id
-    WHERE u.email = ${email}
+    WHERE u.email = ${usernameOrEmail.trim().toLowerCase()}
     LIMIT 1
   `;
 
@@ -103,19 +103,19 @@ auth.post('/register', async (c) => {
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
   const {
     name, email, password, phone,
-    registerMode, companyName, companySlug
+    registerMode, companyName, companySlug, avatar_url
   } = body as {
     name?: string, email?: string, password?: string, phone?: string,
-    registerMode?: 'new_company' | 'join_company', companyName?: string, companySlug?: string
+    registerMode?: 'new_company' | 'join_company' | 'customer', companyName?: string, companySlug?: string, avatar_url?: string
   };
 
   if (!name || !email || !password || !phone || !registerMode || !companySlug) {
     return c.json({ error: 'Todos los campos incluyendo el modo de registro y el código de empresa son requeridos' }, 400);
   }
 
-  // Validar formato de email
-  if (!/^\S+@\S+\.\S+$/.test(email)) {
-    return c.json({ error: 'Formato de correo electrónico inválido' }, 400);
+  // Validar formato de email o usuario
+  if (!/^\S+@\S+\.\S+$/.test(email) && !/^[a-zA-Z0-9_.-]{3,30}$/.test(email)) {
+    return c.json({ error: 'El identificador debe ser un correo válido o un nombre de usuario de 3 a 30 caracteres (letras, números, _, -, .)' }, 400);
   }
 
   // Verificar si el correo ya existe
@@ -149,8 +149,8 @@ auth.post('/register', async (c) => {
 
         // Insertar operador auto-aprobado y activo por ser el creador de la empresa
         await tx`
-          INSERT INTO users (name, phone, email, password, role, active, tenant_id)
-          VALUES (${name}, ${phone}, ${email}, ${hashed}, 'operator', true, ${tenant.id})
+          INSERT INTO users (name, phone, email, password, role, active, tenant_id, avatar_url)
+          VALUES (${name}, ${phone}, ${email}, ${hashed}, 'operator', true, ${tenant.id}, ${avatar_url || null})
         `;
       });
     } catch (err: any) {
@@ -162,8 +162,21 @@ auth.post('/register', async (c) => {
     }
 
     return c.json({ message: 'Empresa y cuenta de administrador creadas con éxito. Ya puedes iniciar sesión.' }, 201);
+  } else if (registerMode === 'customer') {
+    // Registrar cliente asociado a la empresa
+    const [tenant] = await sql`SELECT id FROM tenants WHERE slug = ${slugClean} LIMIT 1`;
+    if (!tenant) {
+      return c.json({ error: 'El código de empresa especificado no existe' }, 404);
+    }
+
+    await sql`
+      INSERT INTO users (name, phone, email, password, role, active, tenant_id, avatar_url)
+      VALUES (${name}, ${phone}, ${email}, ${hashed}, 'customer', true, ${tenant.id}, ${avatar_url || null})
+    `;
+
+    return c.json({ message: 'Cuenta de cliente registrada con éxito. Ya puedes iniciar sesión.' }, 201);
   } else {
-    // Unirse a empresa existente
+    // Unirse a empresa existente como colaborador (operador o mensajero)
     const [tenant] = await sql`SELECT id FROM tenants WHERE slug = ${slugClean} LIMIT 1`;
     if (!tenant) {
       return c.json({ error: 'El código de empresa especificado no existe' }, 404);
@@ -171,8 +184,8 @@ auth.post('/register', async (c) => {
 
     // Insertar como pending y desactivado
     await sql`
-      INSERT INTO users (name, phone, email, password, role, active, tenant_id)
-      VALUES (${name}, ${phone}, ${email}, ${hashed}, 'pending', false, ${tenant.id})
+      INSERT INTO users (name, phone, email, password, role, active, tenant_id, avatar_url)
+      VALUES (${name}, ${phone}, ${email}, ${hashed}, 'pending', false, ${tenant.id}, ${avatar_url || null})
     `;
 
     return c.json({ message: 'Registro exitoso. Tu cuenta está a la espera de aprobación por el administrador de la empresa.' }, 201);

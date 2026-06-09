@@ -1,0 +1,6 @@
+{
+  "appId": "com.enviosrh.app",
+  "appName": "EnvíosRH",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

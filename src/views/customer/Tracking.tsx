@@ -1,9 +1,9 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { publicApi } from '../../lib/api';
 import type { DeliveryState, Tenant } from '../../types';
 import { STATE_LABEL } from '../../types';
-import { IconCheck, IconMotorbike, IconPackage, IconStar } from '../../components/Icons';
+import { IconCheck, IconMotorbike, IconPackage, IconStar, IconMessage, IconSend } from '../../components/Icons';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { applyTenantTheme } from '../../lib/theme';
 import L from 'leaflet';
@@ -22,6 +22,7 @@ interface PublicDelivery {
   messenger_latitude: number | null;
   messenger_longitude: number | null;
   messenger_location_updated_at: string | null;
+  messenger_avatar_url?: string | null;
   delivery_fee: number;
   location_link: string | null;
   pre_confirmed: boolean;
@@ -67,6 +68,37 @@ function StarRating({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000; // Radio de la Tierra en metros
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function playProximityBeep() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime); // Nota La5
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (e) {
+    console.warn('Web Audio beep error:', e);
+  }
+}
+
 export function CustomerTracking() {
   const { token } = useParams<{ token: string }>();
   const [delivery, setDelivery] = useState<PublicDelivery | null>(null);
@@ -75,6 +107,10 @@ export function CustomerTracking() {
   const [preConfirming, setPreConfirming] = useState(false);
   const [rating, setRating] = useState(0);
   const [rated, setRated] = useState(false);
+
+  const [proximityAlert, setProximityAlert] = useState(false);
+  const [etaSeconds, setEtaSeconds] = useState<number | null>(null);
+  const hasBeepedRef = useRef(false);
 
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
 
@@ -122,6 +158,62 @@ export function CustomerTracking() {
     }, 5000);
     return () => clearInterval(interval);
   }, [delivery?.state]);
+
+  // ── Chat Realtime ──
+  interface ChatMessage {
+    id: string;
+    sender: 'messenger' | 'customer';
+    message: string;
+    created_at: string;
+  }
+  const [showChat, setShowChat] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMsg, setNewMsg] = useState('');
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const loadMessages = useCallback(async () => {
+    if (!token || !showChat) return;
+    try {
+      const msgs = await publicApi.get<ChatMessage[]>(`/p/c/${token}/chat`);
+      setMessages(msgs);
+    } catch (e) {
+      console.warn('Error loading chat messages:', e);
+    }
+  }, [token, showChat]);
+
+  // Cargar mensajes al abrir el chat y en polling
+  useEffect(() => {
+    if (!showChat) return;
+    loadMessages();
+    const interval = setInterval(() => {
+      loadMessages();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [showChat, loadMessages]);
+
+  // Auto-scroll al final del chat al recibir mensajes
+  useEffect(() => {
+    if (showChat) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, showChat]);
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token || !newMsg.trim() || sendingMsg) return;
+    setSendingMsg(true);
+    try {
+      const sent = await publicApi.post<ChatMessage>(`/p/c/${token}/chat`, { message: newMsg });
+      setMessages((prev) => [...prev, sent]);
+      setNewMsg('');
+    } catch (err) {
+      console.error('Error sending message:', err);
+    } finally {
+      setSendingMsg(false);
+    }
+  }
+
 
   // Parsear coordenadas del cliente
   const getDestinationCoords = (): [number, number] => {
@@ -241,6 +333,20 @@ export function CustomerTracking() {
         messengerMarkerRef.current.setLatLng([mLat, mLng]);
       }
 
+      // Proximidad (Alerta sonora y visual si está a menos de 200 metros)
+      const destCoords = getDestinationCoords();
+      const distanceToDestination = calculateDistance(mLat, mLng, destCoords[0], destCoords[1]);
+      if (distanceToDestination < 200) {
+        setProximityAlert(true);
+        if (!hasBeepedRef.current) {
+          playProximityBeep();
+          hasBeepedRef.current = true;
+        }
+      } else {
+        setProximityAlert(false);
+        hasBeepedRef.current = false;
+      }
+
       // Ajustar vista para incluir cliente y mensajero
       const dest = getDestinationCoords();
       const bounds = L.latLngBounds([dest, [mLat, mLng]]);
@@ -253,6 +359,33 @@ export function CustomerTracking() {
       }
     }
   }, [delivery?.messenger_latitude, delivery?.messenger_longitude, delivery?.state, delivery?.pre_confirmed]);
+
+  // Reloj ETA: cuenta regresiva de segundos
+  useEffect(() => {
+    if (etaSeconds === null || etaSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setEtaSeconds((prev) => (prev !== null && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [etaSeconds]);
+
+  useEffect(() => {
+    if (routeInfo) {
+      const minutes = parseInt(routeInfo.duration);
+      if (!isNaN(minutes)) {
+        setEtaSeconds(minutes * 60);
+      }
+    } else {
+      setEtaSeconds(null);
+    }
+  }, [routeInfo]);
+
+  const formatETA = (totalSecs: number) => {
+    if (totalSecs <= 0) return "¡Llegando!";
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
   // Actualizar ruta y tiempos (OSRM)
   useEffect(() => {
@@ -480,7 +613,9 @@ export function CustomerTracking() {
           <div className="absolute top-3 left-3 z-[999] bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-xl p-3 shadow-lg flex flex-col gap-1 transition-all">
             <span className="text-[9px] text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider font-bold">Tiempo estimado</span>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-base font-black text-slate-800 dark:text-[#e8e8f4]">{routeInfo.duration}</span>
+              <span className="text-base font-black text-slate-800 dark:text-[#e8e8f4] animate-pulse">
+                {etaSeconds !== null ? formatETA(etaSeconds) : routeInfo.duration}
+              </span>
               <span className="text-[10px] text-slate-500 dark:text-[#6b6b8a]">{routeInfo.distance}</span>
             </div>
           </div>
@@ -572,17 +707,29 @@ export function CustomerTracking() {
             {/* Datos del Mensajero */}
             {delivery.messenger_name && !isCancelled && (
               <div className="bg-slate-50 dark:bg-[#0b0b14] border border-slate-100 dark:border-[#252540]/60 rounded-xl p-3.5 flex items-center gap-3 transition-colors duration-200">
-                <div className="w-10 h-10 rounded-full bg-[#5b8af9]/20 flex items-center justify-center font-bold text-[#5b8af9] text-sm shrink-0 border border-[#5b8af9]/30">
-                  {delivery.messenger_name.charAt(0).toUpperCase()}
-                </div>
+                {delivery.messenger_avatar_url ? (
+                  <img src={delivery.messenger_avatar_url} alt={delivery.messenger_name} className="w-10 h-10 rounded-full object-cover shrink-0 border border-[#5b8af9]/30" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#5b8af9]/20 flex items-center justify-center font-bold text-[#5b8af9] text-sm shrink-0 border border-[#5b8af9]/30">
+                    {delivery.messenger_name.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="text-[10px] text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider font-semibold">Tu Repartidor</div>
                   <div className="font-bold text-slate-800 dark:text-[#e8e8f4] text-sm mt-0.5">{delivery.messenger_name}</div>
                 </div>
                 {delivery.messenger_phone && (
-                  <a href={`tel:${delivery.messenger_phone}`} className="shrink-0 px-3 py-1.5 rounded-lg bg-[#5b8af9] text-white text-xs font-bold hover:bg-[#3a68e0] transition-colors decoration-none">
-                    Llamar
-                  </a>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      onClick={() => setShowChat(true)}
+                      className="px-3 py-1.5 rounded-lg bg-[#5b8af9]/15 text-[#5b8af9] text-xs font-bold hover:bg-[#5b8af9]/25 transition-colors border-0 cursor-pointer flex items-center gap-1"
+                    >
+                      <IconMessage size={13} /> Chat
+                    </button>
+                    <a href={`tel:${delivery.messenger_phone}`} className="px-3 py-1.5 rounded-lg bg-[#5b8af9] text-white text-xs font-bold hover:bg-[#3a68e0] transition-colors decoration-none flex items-center">
+                      Llamar
+                    </a>
+                  </div>
                 )}
               </div>
             )}
@@ -629,6 +776,97 @@ export function CustomerTracking() {
           </>
         )}
       </main>
+
+      {proximityAlert && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[1000] bg-green-500 text-[#0b0b14] px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce border border-green-400 max-w-sm w-full mx-4">
+          <div className="w-8 h-8 rounded-full bg-[#0b0b14] flex items-center justify-center shrink-0">
+            <IconMotorbike size={18} color="#22c55e" />
+          </div>
+          <div className="flex-1 text-left">
+            <div className="text-[11px] font-extrabold uppercase tracking-wider">¡Repartidor Cerca!</div>
+            <div className="text-[10px] font-bold opacity-90">El mensajero está a menos de 200 metros de tu ubicación.</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Overlay Chat Modal Premium ── */}
+      {showChat && delivery && (
+        <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#13131f] border-t sm:border border-slate-200 dark:border-[#252540] rounded-t-2xl sm:rounded-2xl w-full max-w-md h-[90vh] sm:h-[600px] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-[#252540] flex justify-between items-center bg-slate-50 dark:bg-[#0b0b14]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#5b8af9]/15 flex items-center justify-center font-bold text-[#5b8af9] text-xs">
+                  {delivery.messenger_name?.charAt(0).toUpperCase() || 'M'}
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-[#e8e8f4]">{delivery.messenger_name}</div>
+                  <div className="text-[9px] text-green-500 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Chat Activo
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowChat(false)}
+                className="text-[#6b6b8a] hover:text-[#e8e8f4] bg-transparent border-0 cursor-pointer p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-[#252540] transition-colors text-xs font-bold"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {/* Messages body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 dark:bg-[#0b0b14]">
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 gap-2">
+                  <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-[#252540]/60 flex items-center justify-center text-slate-400 dark:text-[#6b6b8a]">
+                    <IconMessage size={18} />
+                  </div>
+                  <p className="text-xs font-bold text-slate-500 dark:text-[#6b6b8a]">Di algo para iniciar el chat</p>
+                  <p className="text-[10px] text-slate-400 dark:text-[#3a3a58]">El mensajero podrá ver y responder tus mensajes.</p>
+                </div>
+              ) : (
+                messages.map((m) => {
+                  const isMe = m.sender === 'customer';
+                  return (
+                    <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-sm ${
+                        isMe
+                          ? 'bg-[#5b8af9] text-white rounded-tr-none'
+                          : 'bg-white dark:bg-[#1c1c30] text-slate-800 dark:text-[#e8e8f4] border border-slate-100 dark:border-[#252540] rounded-tl-none'
+                      }`}>
+                        <p className="break-words">{m.message}</p>
+                        <div className={`text-[8px] mt-1 text-right ${isMe ? 'text-white/75' : 'text-slate-400 dark:text-[#6b6b8a]'}`}>
+                          {new Date(m.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input form */}
+            <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-200 dark:border-[#252540] flex gap-2 bg-white dark:bg-[#13131f]">
+              <input
+                type="text"
+                value={newMsg}
+                onChange={(e) => setNewMsg(e.target.value)}
+                placeholder="Escribe un mensaje al mensajero..."
+                className="flex-1 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl px-3 py-2 text-xs outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+              />
+              <button
+                type="submit"
+                disabled={!newMsg.trim() || sendingMsg}
+                className="p-2.5 rounded-xl bg-[#5b8af9] hover:bg-[#3a68e0] text-white disabled:opacity-40 transition-colors border-0 cursor-pointer flex items-center justify-center"
+              >
+                <IconSend size={15} color="#ffffff" />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

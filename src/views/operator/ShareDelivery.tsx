@@ -119,6 +119,20 @@ export function ShareDelivery() {
     } finally { setCancelling(false); }
   }
 
+  async function handleNativeShare() {
+    if (!share) return;
+    const url = share.customer_token_url;
+    const text = `Sigue tu envío en tiempo real:\n${url}`;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'Seguimiento de envío', text, url });
+      } catch (_) { /* usuario canceló */ }
+    } else {
+      await navigator.clipboard.writeText(url);
+      setSuccess('Link copiado al portapapeles');
+    }
+  }
+
   if (!delivery || !share) {
     return (
       <AppShell>
@@ -200,6 +214,16 @@ export function ShareDelivery() {
               </a>
             )}
             {portalUrl && <CopyButton text={portalUrl} label="Copiar link" />}
+            <button
+              onClick={handleNativeShare}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#5b8af9]/15 text-[#5b8af9] text-sm font-semibold hover:bg-[#5b8af9]/25 transition-colors border-0 cursor-pointer"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              Compartir
+            </button>
           </div>
           {portalUrl && (
             <div className="mt-3 p-3 bg-[#0b0b14] rounded-lg">

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { publicApi } from '../lib/api';
-import { IconPackage } from '../components/Icons';
+import { publicApi, uploadFile } from '../lib/api';
+import { IconPackage, IconUser } from '../components/Icons';
 import { ThemeToggle } from '../components/ThemeToggle';
 
 export function Register() {
@@ -10,7 +10,7 @@ export function Register() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const [registerMode, setRegisterMode] = useState<'new_company' | 'join_company'>('new_company');
+  const [registerMode, setRegisterMode] = useState<'new_company' | 'join_company' | 'customer'>('new_company');
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -19,6 +19,23 @@ export function Register() {
     companyName: '',
     companySlug: ''
   });
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    setError('');
+    try {
+      const res = await uploadFile(file);
+      setAvatarUrl(res.url);
+    } catch (err: any) {
+      setError(err.message || 'Error al subir la imagen');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +51,8 @@ export function Register() {
         password: form.password,
         registerMode,
         companyName: registerMode === 'new_company' ? form.companyName : undefined,
-        companySlug: form.companySlug
+        companySlug: form.companySlug,
+        avatar_url: avatarUrl || undefined
       };
       const res = await publicApi.post<any>('/auth/register', payload);
       setSuccess(res.message || 'Registro completado con éxito.');
@@ -96,7 +114,18 @@ export function Register() {
                   : 'bg-transparent text-[#6b6b8a] hover:text-[#e8e8f4]'
               }`}
             >
-              Unirse a Empresa
+              Unirse
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegisterMode('customer')}
+              className={`flex-1 py-2 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-all border-0 cursor-pointer ${
+                registerMode === 'customer'
+                  ? 'bg-[#5b8af9] text-[#0b0b14]'
+                  : 'bg-transparent text-[#6b6b8a] hover:text-[#e8e8f4]'
+              }`}
+            >
+              Cliente
             </button>
           </div>
 
@@ -144,6 +173,37 @@ export function Register() {
                 disabled={loading || !!success}
               />
               <span className="text-[9px] text-[#6b6b8a]">Único, sin espacios ni caracteres especiales.</span>
+            </div>
+
+             <div className="flex flex-col items-center gap-2 mb-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#6b6b8a]">Foto de Perfil</label>
+              <div className="relative group w-20 h-20 rounded-full bg-[#0b0b14] border border-[#252540] flex items-center justify-center overflow-hidden transition-all hover:border-[#5b8af9] cursor-pointer">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <IconUser size={32} color="#3a3a58" />
+                )}
+                {uploadingAvatar && (
+                  <div className="absolute inset-0 bg-[#0b0b14]/70 flex items-center justify-center">
+                    <svg className="w-5 h-5 animate-spin text-[#5b8af9]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <circle cx="12" cy="12" r="10" strokeDasharray="30 10" />
+                    </svg>
+                  </div>
+                )}
+                <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[10px] text-white font-bold uppercase">
+                  Subir
+                  <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} disabled={uploadingAvatar} />
+                </label>
+              </div>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => setAvatarUrl('')}
+                  className="text-[10px] text-[#ef4444] hover:underline bg-transparent border-0 cursor-pointer font-semibold"
+                >
+                  Eliminar Foto
+                </button>
+              )}
             </div>
 
             <hr className="border-[#252540] my-1" />

@@ -18,12 +18,15 @@ interface Form {
   messenger_id: string;
   total_amount: string;
   products: string;
+  scheduled_date: string;
+  scheduled_time: string;
 }
 
 const EMPTY: Form = {
   customer_name: '', customer_phone: '', customer_email: '', customer_address: '',
   customer_reference: '', location_link: '', delivery_fee: '',
   notes: '', messenger_id: '', total_amount: '', products: '',
+  scheduled_date: '', scheduled_time: '',
 };
 
 function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
@@ -58,6 +61,7 @@ export function NewDelivery() {
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const routePolylineRef = useRef<L.Polyline | null>(null);
 
   const [searchingCustomer, setSearchingCustomer] = useState(false);
   const [customerMessage, setCustomerMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
@@ -117,22 +121,10 @@ export function NewDelivery() {
       { maxZoom: 20 }
     ).addTo(mapRef.current);
 
-    const pinIcon = L.divIcon({
-      className: 'new-pin-marker',
-      html: `<div class="w-6 h-6 rounded-full bg-[#ef4444]/20 border-2 border-[#ef4444] flex items-center justify-center shadow-lg">
-               <div class="w-2.5 h-2.5 rounded-full bg-[#ef4444]"></div>
-             </div>`,
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
-    });
+
 
     mapRef.current.on('click', (e: L.LeafletMouseEvent) => {
       const { lat, lng } = e.latlng;
-      if (!markerRef.current) {
-        markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(mapRef.current!);
-      } else {
-        markerRef.current.setLatLng([lat, lng]);
-      }
       setForm((f) => ({
         ...f,
         location_link: `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`
@@ -169,6 +161,75 @@ export function NewDelivery() {
     return () => window.removeEventListener('themechange', handleThemeChange);
   }, []);
 
+  // Actualizar marcador y trazar ruta cuando cambia el link de ubicación
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const match = form.location_link.match(/([-\d.]+),\s*([-\d.]+)/);
+    if (!match) {
+      if (markerRef.current && mapRef.current) {
+        mapRef.current.removeLayer(markerRef.current);
+        markerRef.current = null;
+      }
+      if (routePolylineRef.current && mapRef.current) {
+        mapRef.current.removeLayer(routePolylineRef.current);
+        routePolylineRef.current = null;
+      }
+      return;
+    }
+
+    const lat = Number(match[1]);
+    const lng = Number(match[2]);
+
+    const pinIcon = L.divIcon({
+      className: 'new-pin-marker',
+      html: `<div class="w-6 h-6 rounded-full bg-[#ef4444]/20 border-2 border-[#ef4444] flex items-center justify-center shadow-lg">
+               <div class="w-2.5 h-2.5 rounded-full bg-[#ef4444]"></div>
+             </div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    if (!markerRef.current) {
+      markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(mapRef.current);
+    } else {
+      markerRef.current.setLatLng([lat, lng]);
+    }
+
+    // Trazar ruta desde la oficina central (Santo Domingo: [18.4861, -69.9312])
+    const originLat = 18.4861;
+    const originLng = -69.9312;
+    const url = `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${lng},${lat}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.code === 'Ok' && data.routes?.[0]) {
+          const route = data.routes[0];
+          const coordinates = route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
+
+          if (!mapRef.current) return;
+
+          if (!routePolylineRef.current) {
+            routePolylineRef.current = L.polyline(coordinates, {
+              color: '#5b8af9',
+              weight: 4,
+              opacity: 0.8,
+              dashArray: '5, 10'
+            }).addTo(mapRef.current);
+          } else {
+            routePolylineRef.current.setLatLngs(coordinates);
+          }
+
+          const bounds = L.latLngBounds([[originLat, originLng], [lat, lng]]);
+          mapRef.current.fitBounds(bounds, { padding: [40, 40] });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Routing] Error:', err);
+      });
+  }, [form.location_link]);
+
   function set(k: keyof Form, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -176,6 +237,9 @@ export function NewDelivery() {
     if (!form.customer_phone) { setError('El teléfono del cliente es requerido'); return; }
     setError(''); setSaving(true);
     try {
+      const scheduledAt = form.scheduled_date
+        ? new Date(`${form.scheduled_date}T${form.scheduled_time || '08:00'}:00`).toISOString()
+        : undefined;
       const body = {
         customer: {
           name: form.customer_name || undefined,
@@ -190,6 +254,7 @@ export function NewDelivery() {
         messenger_id: form.messenger_id || undefined,
         total_amount: form.total_amount ? Number(form.total_amount) : 0,
         products: form.products || undefined,
+        scheduled_at: scheduledAt ?? null,
       };
       const { id } = await api.post<{ id: string }>('/deliveries', body);
       nav(`/operador/envio/${id}/compartir`);
@@ -283,6 +348,42 @@ export function NewDelivery() {
             <Field label="Notas internas" className="md:col-span-2">
               <textarea className={inputCls + ' resize-none min-h-[80px]'} value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Instrucciones especiales…" rows={3} />
             </Field>
+
+            {/* Entrega Programada */}
+            <div className="md:col-span-2 flex flex-col gap-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a]">Entrega programada <span className="text-[#3a3a58] normal-case font-normal">(opcional)</span></label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6b6b8a]">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  </span>
+                  <input
+                    type="date"
+                    className={inputCls + ' !pl-10 cursor-pointer'}
+                    value={form.scheduled_date}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => set('scheduled_date', e.target.value)}
+                  />
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6b6b8a]">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  </span>
+                  <input
+                    type="time"
+                    className={inputCls + ' !pl-10 cursor-pointer'}
+                    value={form.scheduled_time}
+                    disabled={!form.scheduled_date}
+                    onChange={(e) => set('scheduled_time', e.target.value)}
+                  />
+                </div>
+              </div>
+              {form.scheduled_date && (
+                <p className="text-[11px] text-[#a75bf9] font-semibold mt-0.5">
+                  🗓️ Programado para el {new Date(`${form.scheduled_date}T${form.scheduled_time || '08:00'}:00`).toLocaleString('es-DO', { dateStyle: 'full', timeStyle: 'short' })}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 

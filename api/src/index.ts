@@ -13,6 +13,8 @@ import messengersRoutes from './routes/messengers.js';
 import usersRoutes from './routes/users.js';
 import tenantRoutes from './routes/tenant.js';
 import portalRoutes from './routes/portal.js';
+import uploadsRoutes from './routes/uploads.js';
+import { serveStatic } from '@hono/node-server/serve-static';
 
 // ── Validar variables críticas antes de arrancar ────────────
 const JWT_SECRET = process.env.JWT_SECRET ?? '';
@@ -86,6 +88,9 @@ async function bootstrapAdmin() {
 // ── App ─────────────────────────────────────────────────────
 const app = new Hono();
 
+// Servir archivos estáticos de uploads
+app.use('/uploads/*', serveStatic({ root: './' }));
+
 // Middlewares de seguridad y logs
 app.use('*', secureHeaders());
 app.use('*', logger());
@@ -96,11 +101,16 @@ app.use('*', cors({
   credentials: true,
 }));
 
-// Límite de consumo de recursos: Max 2MB payload
-app.use('*', bodyLimit({
-  maxSize: 2 * 1024 * 1024,
-  onError: (c) => c.json({ error: 'Tamaño de solicitud excedido (máximo 2MB)' }, 413)
-}));
+// Límite de consumo de recursos: Max 2MB payload (excepto para cargas de archivos)
+app.use('*', async (c, next) => {
+  if (c.req.path.startsWith('/upload')) {
+    return next();
+  }
+  return bodyLimit({
+    maxSize: 2 * 1024 * 1024,
+    onError: (c) => c.json({ error: 'Tamaño de solicitud excedido (máximo 2MB)' }, 413)
+  })(c, next);
+});
 
 // Manejo centralizado de errores (Security: no revelar stack traces en prod)
 app.onError((err, c) => {
@@ -121,6 +131,7 @@ app.route('/deliveries', deliveriesRoutes);
 app.route('/messengers', messengersRoutes);
 app.route('/users', usersRoutes);
 app.route('/tenant', tenantRoutes);
+app.route('/upload', uploadsRoutes);
 
 // Rutas públicas de portal (sin prefijo /api, token en URL)
 app.route('/p', portalRoutes);

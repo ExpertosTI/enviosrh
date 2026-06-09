@@ -50,15 +50,24 @@ export function UsersApproval() {
           <div className="space-y-4">
             {users.map(user => (
               <div key={user.id} className="bg-[#14141f] border border-[#2a2a3c] rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-medium text-white">{user.name}</h3>
-                  <div className="text-sm text-[#8c8cb4] mt-1 space-x-3">
-                    <span>{user.email}</span>
-                    <span>•</span>
-                    <span>{user.phone}</span>
-                  </div>
-                  <div className="text-xs text-[#5c5c77] mt-1">
-                    Registrado el {new Date(user.created_at).toLocaleString()}
+                <div className="flex items-center gap-4 text-left">
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt={user.name} className="w-12 h-12 rounded-full object-cover border border-[#5b8af9]/30 shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-[#5b8af9]/10 border border-[#5b8af9]/30 flex items-center justify-center text-[#5b8af9] font-bold text-sm shrink-0">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="text-lg font-medium text-white">{user.name}</h3>
+                    <div className="text-sm text-[#8c8cb4] mt-1 space-x-3">
+                      <span>{user.email}</span>
+                      <span>•</span>
+                      <span>{user.phone}</span>
+                    </div>
+                    <div className="text-xs text-[#5c5c77] mt-1">
+                      Registrado el {new Date(user.created_at).toLocaleString()}
+                    </div>
                   </div>
                 </div>
                 

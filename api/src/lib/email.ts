@@ -22,6 +22,10 @@ export async function sendCustomerTrackingEmail(
   customerToken: string,
   details: { address: string }
 ) {
+  if (!to || !to.includes('@')) {
+    console.log(`[Email] Saltando correo de seguimiento para cliente sin email: ${to}`);
+    return;
+  }
   const trackingLink = `${appUrl()}/tracking/${customerToken}`;
   const mailOptions = {
     from: `"${process.env.COMPANY_NAME ?? 'EnvíosRH'}" <${process.env.SMTP_USER ?? 'info@renace.tech'}>`,
@@ -63,6 +67,10 @@ export async function sendMessengerAssignmentEmail(
   messengerToken: string,
   details: { customerName: string; address: string; fee: number }
 ) {
+  if (!to || !to.includes('@')) {
+    console.log(`[Email] Saltando correo de asignación para mensajero sin email: ${to}`);
+    return;
+  }
   const portalLink = `${appUrl()}/m-portal/${messengerToken}`;
   const mailOptions = {
     from: `"${process.env.COMPANY_NAME ?? 'EnvíosRH'}" <${process.env.SMTP_USER ?? 'info@renace.tech'}>`,
@@ -126,6 +134,10 @@ export async function sendEmployeeWelcomeEmail(
   companyNameStr: string,
   companySlug: string
 ) {
+  if (!to || !to.includes('@')) {
+    console.log(`[Email] Saltando correo de bienvenida para usuario/nombre: ${to}`);
+    return;
+  }
   const loginLink = `${appUrl()}/login`;
   const roleLabel = role === 'operator' ? 'Vendedor / Operador' : 'Mensajero';
   const mailOptions = {

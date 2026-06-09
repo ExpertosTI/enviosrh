@@ -38,6 +38,7 @@ export const api = {
   post:  <T>(path: string, body: unknown) => req<T>('POST',  path, body),
   get:   <T>(path: string)                => req<T>('GET',   path),
   patch: <T>(path: string, body?: unknown) => req<T>('PATCH', path, body),
+  delete: <T>(path: string)               => req<T>('DELETE', path),
 };
 
 /** Rutas públicas (sin token) */
@@ -58,3 +59,22 @@ export const publicApi = {
   get:  <T>(path: string)                => pub<T>('GET',  path),
   post: <T>(path: string, body?: unknown) => pub<T>('POST', path, body),
 };
+
+export async function uploadFile(file: File): Promise<{ url: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const token = getToken();
+  const res = await fetch(`${BASE}/upload`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? 'Error al subir archivo');
+  }
+  return res.json() as Promise<{ url: string }>;
+}
+

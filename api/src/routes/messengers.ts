@@ -59,4 +59,49 @@ messengers.patch('/:id', auth, operatorOnly, async (c) => {
   return c.json(updated);
 });
 
+// Obtener reporte de efectivo recolectado por mensajeros
+messengers.get('/cash-reports', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
+
+  const rows = await sql`
+    SELECT 
+      u.id AS messenger_id,
+      u.name AS messenger_name,
+      u.phone AS messenger_phone,
+      u.avatar_url AS messenger_avatar,
+      COALESCE(SUM(CASE WHEN d.cash_settled = false THEN d.total_amount + d.delivery_fee ELSE 0 END), 0)::numeric AS unsettled_cash,
+      COALESCE(SUM(CASE WHEN d.cash_settled = true THEN d.total_amount + d.delivery_fee ELSE 0 END), 0)::numeric AS settled_cash,
+      COUNT(CASE WHEN d.cash_settled = false THEN 1 END)::integer AS unsettled_count
+    FROM users u
+    LEFT JOIN deliveries d ON d.messenger_id = u.id AND d.state = 'delivered'
+    WHERE u.role = 'messenger' AND u.tenant_id = ${user.tenant_id}
+    GROUP BY u.id, u.name, u.phone, u.avatar_url
+    ORDER BY unsettled_cash DESC, u.name ASC
+  `;
+
+  return c.json(rows);
+});
+
+// Liquidar efectivo recaudado por un mensajero
+messengers.post('/cash-settle', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
+  const { messenger_id } = await c.req.json<{ messenger_id: string }>();
+
+  if (!messenger_id || !isValidUuid(messenger_id)) {
+    return c.json({ error: 'ID de mensajero no válido' }, 400);
+  }
+
+  await sql`
+    UPDATE deliveries
+    SET cash_settled = true,
+        cash_settled_at = now()
+    WHERE messenger_id = ${messenger_id}
+      AND tenant_id = ${user.tenant_id}
+      AND state = 'delivered'
+      AND cash_settled = false
+  `;
+
+  return c.json({ ok: true, message: 'Efectivo liquidado correctamente' });
+});
+
 export default messengers;

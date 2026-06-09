@@ -33,7 +33,7 @@ export function customerMessage(opts: {
 }) {
   return (
     `Hola ${opts.customerName}, tu pedido de ${company()} está en camino. ` +
-    `Sigue el estado aquí: ${appUrl()}/p/c/${opts.customerToken}`
+    `Sigue el estado aquí: ${appUrl()}/tracking/${opts.customerToken}`
   );
 }
 

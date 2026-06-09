@@ -40,6 +40,77 @@ export function GpsProvider({ children }: { children: ReactNode }) {
   const lastReportRef = useRef<number>(0);
   const pendingReportRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const queueLocation = (loc: any) => {
+    try {
+      const stored = localStorage.getItem('enviosrh_gps_queue');
+      const queue = stored ? JSON.parse(stored) : [];
+      queue.push(loc);
+      if (queue.length > 100) queue.shift();
+      localStorage.setItem('enviosrh_gps_queue', JSON.stringify(queue));
+    } catch (e) {
+      console.warn('[GPS Cache] Error:', e);
+    }
+  };
+
+  const syncQueue = async () => {
+    try {
+      const stored = localStorage.getItem('enviosrh_gps_queue');
+      if (!stored) return;
+      const queue = JSON.parse(stored);
+      if (queue.length === 0) return;
+
+      await api.post('/users/location/bulk', { locations: queue });
+      localStorage.removeItem('enviosrh_gps_queue');
+      console.log(`[GPS Cache] Sincronizados ${queue.length} registros offline.`);
+    } catch (e) {
+      console.warn('[GPS Sync] Reintento fallido:', e);
+    }
+  };
+
+  const sendLocation = async (lat: number, lng: number, acc: number) => {
+    let batteryLevel: number | undefined = undefined;
+    try {
+      if ('getBattery' in navigator) {
+        const battery: any = await (navigator as any).getBattery();
+        batteryLevel = Math.round(battery.level * 100);
+      }
+    } catch {}
+
+    const payload = {
+      latitude: lat,
+      longitude: lng,
+      timestamp: Date.now(),
+      battery_level: batteryLevel,
+      signal_quality: acc < 20 ? 'excelente' : acc < 50 ? 'buena' : 'baja'
+    };
+
+    if (!navigator.onLine) {
+      queueLocation(payload);
+      return;
+    }
+
+    try {
+      await api.post('/users/location', {
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        battery_level: payload.battery_level,
+        signal_quality: payload.signal_quality
+      });
+      syncQueue();
+    } catch (err) {
+      queueLocation(payload);
+    }
+  };
+
+  // Escuchar evento online para sincronizar cola
+  useEffect(() => {
+    const handleOnline = () => {
+      syncQueue();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
   const startWatch = () => {
     if (!navigator.geolocation) {
       setStatus('unavailable');
@@ -59,19 +130,13 @@ export function GpsProvider({ children }: { children: ReactNode }) {
         const now = Date.now();
         if (now - lastReportRef.current >= REPORT_THROTTLE_MS) {
           lastReportRef.current = now;
-          api.post('/users/location', {
-            latitude: newCoords[0],
-            longitude: newCoords[1],
-          }).catch(() => {/* silencioso, no bloquear UX */});
+          sendLocation(newCoords[0], newCoords[1], pos.coords.accuracy);
         } else if (!pendingReportRef.current) {
           const delay = REPORT_THROTTLE_MS - (now - lastReportRef.current);
           pendingReportRef.current = setTimeout(() => {
             lastReportRef.current = Date.now();
             pendingReportRef.current = null;
-            api.post('/users/location', {
-              latitude: newCoords[0],
-              longitude: newCoords[1],
-            }).catch(() => {});
+            sendLocation(newCoords[0], newCoords[1], pos.coords.accuracy);
           }, delay);
         }
       },

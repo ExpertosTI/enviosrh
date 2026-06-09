@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { api } from '../../lib/api';
+import { api, uploadFile } from '../../lib/api';
 import { AppShell, PageHeader } from '../../components/AppShell';
 import { TenantSettings } from './TenantSettings';
 import { getSession } from '../../lib/auth';
+import { IconUser } from '../../components/Icons';
 import L from 'leaflet';
 
 
@@ -25,6 +26,7 @@ interface Messenger {
   active: boolean; created_at: string;
   deliveries_completed: number; deliveries_total: number; average_rating: number;
   latitude: number | null; longitude: number | null; location_updated_at: string | null;
+  avatar_url?: string | null; status?: string | null;
 }
 interface Customer {
   id: string; name: string; email: string | null; phone: string | null;
@@ -114,10 +116,98 @@ export function AdminPanel() {
 
   // ── Modal de Registro de Colaboradores ──
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', role: 'messenger' as 'messenger' | 'operator' });
+  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', role: 'messenger' as 'messenger' | 'operator', avatar_url: '' });
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState('');
   const [createdCredentials, setCreatedCredentials] = useState<{ email: string; tempPassword: string; slug: string } | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+
+  // ── Modal de Edición de Colaboradores ──
+  const [editingUser, setEditingUser] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+    role: 'messenger' | 'operator';
+    active: boolean;
+    avatar_url: string;
+    password?: string;
+  } | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    setAvatarError('');
+    try {
+      const res = await uploadFile(file);
+      setRegisterForm(prev => ({ ...prev, avatar_url: res.url }));
+    } catch (err: any) {
+      setAvatarError(err.message || 'Error al subir la imagen');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleEditAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    setAvatarError('');
+    try {
+      const res = await uploadFile(file);
+      setEditingUser(prev => prev ? { ...prev, avatar_url: res.url } : null);
+    } catch (err: any) {
+      setAvatarError(err.message || 'Error al subir la imagen');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setEditLoading(true);
+    setEditError('');
+    try {
+      await api.patch(`/users/${editingUser.id}`, {
+        name: editingUser.name,
+        email: editingUser.email,
+        phone: editingUser.phone,
+        role: editingUser.role,
+        active: editingUser.active,
+        avatar_url: editingUser.avatar_url,
+        password: editingUser.password || undefined
+      });
+      // Refrescar
+      const updated = await api.get<AdminData>('/users/admin-dashboard');
+      setData(updated);
+      setEditingUser(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Error al actualizar colaborador');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (id: string, name: string) => {
+    if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente a ${name}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/users/${id}`);
+      const updated = await api.get<AdminData>('/users/admin-dashboard');
+      setData(updated);
+      if (editingUser?.id === id) {
+        setEditingUser(null);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al eliminar colaborador');
+    }
+  };
 
   // ── Modal de Mapa de Mensajeros ──
   const [selectedMessengerForMap, setSelectedMessengerForMap] = useState<{ name: string; latitude: number; longitude: number; updatedAt?: string | null } | null>(null);
@@ -154,9 +244,10 @@ export function AdminPanel() {
 
   const closeRegisterModal = () => {
     setShowRegisterModal(false);
-    setRegisterForm({ name: '', email: '', phone: '', role: 'messenger' });
+    setRegisterForm({ name: '', email: '', phone: '', role: 'messenger', avatar_url: '' });
     setRegisterError('');
     setCreatedCredentials(null);
+    setAvatarError('');
   };
 
   useEffect(() => {
@@ -353,21 +444,53 @@ export function AdminPanel() {
                         <th className="px-4 py-3 text-center">Total</th>
                         <th className="px-4 py-3 text-center">Calificación</th>
                         <th className="px-4 py-3 text-center">GPS</th>
+                        <th className="px-4 py-3 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-[#252540]/40">
                       {filteredMessengers.length === 0 && (
-                        <tr><td colSpan={7} className="px-4 py-10 text-center text-xs text-slate-400 dark:text-[#6b6b8a]">Sin resultados</td></tr>
+                        <tr><td colSpan={8} className="px-4 py-10 text-center text-xs text-slate-400 dark:text-[#6b6b8a]">Sin resultados</td></tr>
                       )}
                       {filteredMessengers.map(m => (
-                        <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-[#0b0b14]/30 transition-colors">
+                        <tr 
+                          key={m.id} 
+                          onClick={() => {
+                            if (m.latitude && m.longitude) {
+                              setSelectedMessengerForMap({
+                                name: m.name,
+                                latitude: Number(m.latitude),
+                                longitude: Number(m.longitude),
+                                updatedAt: m.location_updated_at
+                              });
+                            }
+                          }}
+                          className={`hover:bg-slate-50 dark:hover:bg-[#0b0b14]/30 transition-colors ${m.latitude && m.longitude ? 'cursor-pointer' : ''}`}
+                        >
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-[#a75bf9]/15 flex items-center justify-center shrink-0 font-bold text-[#a75bf9] text-xs border border-[#a75bf9]/30">
-                                {m.name.charAt(0).toUpperCase()}
-                              </div>
+                              {m.avatar_url ? (
+                                <img src={m.avatar_url} alt={m.name} className="w-8 h-8 rounded-full shrink-0 object-cover border border-[#a75bf9]/30" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-[#a75bf9]/15 flex items-center justify-center shrink-0 font-bold text-[#a75bf9] text-xs border border-[#a75bf9]/30">
+                                  {m.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
                               <div>
-                                <div className="font-semibold text-slate-800 dark:text-[#e8e8f4] text-xs">{m.name}</div>
+                                <div className="font-semibold text-slate-800 dark:text-[#e8e8f4] text-xs flex items-center gap-1.5">
+                                  {m.name}
+                                  {m.status && (
+                                    <span 
+                                      className={`w-1.5 h-1.5 rounded-full ${
+                                        m.status === 'available' 
+                                          ? 'bg-[#22c55e]' 
+                                          : m.status === 'busy' 
+                                            ? 'bg-[#f59e0b]' 
+                                            : 'bg-slate-400 dark:bg-[#3a3a58]'
+                                      }`} 
+                                      title={m.status === 'available' ? 'Disponible' : m.status === 'busy' ? 'Ocupado' : 'Offline'} 
+                                    />
+                                  )}
+                                </div>
                                 <div className="text-[10px] text-slate-400 dark:text-[#6b6b8a]">@{m.email ?? 'sin usuario'}</div>
                               </div>
                             </div>
@@ -391,6 +514,7 @@ export function AdminPanel() {
                                 type="button"
                                 onClick={(e) => {
                                   e.preventDefault();
+                                  e.stopPropagation();
                                   setSelectedMessengerForMap({
                                     name: m.name,
                                     latitude: Number(m.latitude),
@@ -406,6 +530,32 @@ export function AdminPanel() {
                             ) : (
                               <span className="text-[10px] text-slate-300 dark:text-[#3a3a58]">—</span>
                             )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => setEditingUser({
+                                  id: m.id,
+                                  name: m.name,
+                                  email: m.email || '',
+                                  phone: m.phone || '',
+                                  role: 'messenger',
+                                  active: m.active,
+                                  avatar_url: m.avatar_url || ''
+                                })}
+                                className="px-2 py-1 text-[11px] font-bold text-white bg-[#5b8af9] hover:bg-[#3a68e0] rounded-lg border-0 cursor-pointer transition-all"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(m.id, m.name)}
+                                className="px-2 py-1 text-[11px] font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg border-0 cursor-pointer transition-all"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -424,11 +574,12 @@ export function AdminPanel() {
                         <th className="px-4 py-3 text-left">Contacto</th>
                         <th className="px-4 py-3 text-center">Envíos Registrados</th>
                         <th className="px-4 py-3 text-left">Miembro desde</th>
+                        <th className="px-4 py-3 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-[#252540]/40">
                       {filteredSellers.length === 0 && (
-                        <tr><td colSpan={4} className="px-4 py-10 text-center text-xs text-slate-400 dark:text-[#6b6b8a]">Sin resultados</td></tr>
+                        <tr><td colSpan={5} className="px-4 py-10 text-center text-xs text-slate-400 dark:text-[#6b6b8a]">Sin resultados</td></tr>
                       )}
                       {filteredSellers.map(s => (
                         <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-[#0b0b14]/30 transition-colors">
@@ -449,6 +600,32 @@ export function AdminPanel() {
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-400 dark:text-[#6b6b8a]">
                             {new Date(s.created_at).toLocaleDateString('es-DO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => setEditingUser({
+                                  id: s.id,
+                                  name: s.name,
+                                  email: s.email || '',
+                                  phone: s.phone || '',
+                                  role: 'operator',
+                                  active: true,
+                                  avatar_url: ''
+                                })}
+                                className="px-2 py-1 text-[11px] font-bold text-white bg-[#5b8af9] hover:bg-[#3a68e0] rounded-lg border-0 cursor-pointer transition-all"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(s.id, s.name)}
+                                className="px-2 py-1 text-[11px] font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg border-0 cursor-pointer transition-all"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -544,6 +721,38 @@ export function AdminPanel() {
                   </div>
                 )}
 
+                <div className="flex flex-col items-center gap-2 mb-2">
+                  <div className="relative group w-16 h-16 rounded-full bg-slate-100 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] flex items-center justify-center overflow-hidden transition-all hover:border-[#5b8af9] cursor-pointer">
+                    {registerForm.avatar_url ? (
+                      <img src={registerForm.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <IconUser size={24} color="#8c8cb4" />
+                    )}
+                    {uploadingAvatar && (
+                      <div className="absolute inset-0 bg-[#0b0b14]/70 flex items-center justify-center">
+                        <svg className="w-4 h-4 animate-spin text-[#5b8af9]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                          <circle cx="12" cy="12" r="10" strokeDasharray="30 10" />
+                        </svg>
+                      </div>
+                    )}
+                    <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[9px] text-white font-bold uppercase">
+                      Subir
+                      <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} disabled={uploadingAvatar} />
+                    </label>
+                  </div>
+                  <span className="text-[10px] text-slate-400 dark:text-[#6b6b8a] font-bold uppercase tracking-wider">Foto de Perfil (Opcional)</span>
+                  {avatarError && <span className="text-[9px] text-red-500 font-medium">{avatarError}</span>}
+                  {registerForm.avatar_url && (
+                    <button
+                      type="button"
+                      onClick={() => setRegisterForm(prev => ({ ...prev, avatar_url: '' }))}
+                      className="text-[9px] text-red-500 hover:underline bg-transparent border-0 cursor-pointer font-semibold"
+                    >
+                      Remover foto
+                    </button>
+                  )}
+                </div>
+
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
                     Nombre Completo
@@ -560,12 +769,12 @@ export function AdminPanel() {
 
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
-                    Correo Electrónico (Usuario)
+                    Usuario o Correo Electrónico
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     required
-                    placeholder="Ej. juan.perez@empresa.com"
+                    placeholder="Ej. juanperez o juan@empresa.com"
                     className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
                     value={registerForm.email}
                     onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
@@ -672,6 +881,179 @@ export function AdminPanel() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Edición de Colaborador ── */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl transition-all animate-in zoom-in-95 duration-200">
+            
+            {/* Encabezado */}
+            <div className="p-5 border-b border-slate-100 dark:border-[#252540] flex justify-between items-center bg-white dark:bg-[#13131f]">
+              <h3 className="font-extrabold text-slate-800 dark:text-[#e8e8f4] text-base">
+                Editar Colaborador
+              </h3>
+              <button 
+                onClick={() => setEditingUser(null)}
+                className="text-slate-400 hover:text-slate-600 dark:text-[#6b6b8a] dark:hover:text-[#e8e8f4] bg-transparent border-0 cursor-pointer p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#252540]"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleEditUser} className="p-5 flex flex-col gap-4">
+              {editError && (
+                <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl px-4 py-2.5 text-red-600 dark:text-[#ef4444] text-xs font-semibold">
+                  {editError}
+                </div>
+              )}
+
+              {/* Avatar Upload */}
+              <div className="flex flex-col items-center gap-2 mb-2">
+                <div className="relative group w-16 h-16 rounded-full bg-slate-100 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] flex items-center justify-center overflow-hidden transition-all hover:border-[#5b8af9] cursor-pointer">
+                  {editingUser.avatar_url ? (
+                    <img src={editingUser.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <IconUser size={24} color="#8c8cb4" />
+                  )}
+                  {uploadingAvatar && (
+                    <div className="absolute inset-0 bg-[#0b0b14]/70 flex items-center justify-center">
+                      <svg className="w-4 h-4 animate-spin text-[#5b8af9]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30 10" />
+                      </svg>
+                    </div>
+                  )}
+                  <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[9px] text-white font-bold uppercase">
+                    Subir
+                    <input type="file" accept="image/*" className="hidden" onChange={handleEditAvatarChange} disabled={uploadingAvatar} />
+                  </label>
+                </div>
+                <span className="text-[10px] text-slate-400 dark:text-[#6b6b8a] font-bold uppercase tracking-wider">Foto de Perfil (Opcional)</span>
+                {avatarError && <span className="text-[9px] text-red-500 font-medium">{avatarError}</span>}
+                {editingUser.avatar_url && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(prev => prev ? { ...prev, avatar_url: '' } : null)}
+                    className="text-[9px] text-red-500 hover:underline bg-transparent border-0 cursor-pointer font-semibold"
+                  >
+                    Remover foto
+                  </button>
+                )}
+              </div>
+
+              {/* Nombre */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                  Nombre Completo
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. Juan Pérez"
+                  className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+                  value={editingUser.name}
+                  onChange={(e) => setEditingUser(prev => prev ? { ...prev, name: e.target.value } : null)}
+                />
+              </div>
+
+              {/* Usuario o Correo */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                  Usuario o Correo Electrónico
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. juanperez o juan@empresa.com"
+                  className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+                  value={editingUser.email}
+                  onChange={(e) => setEditingUser(prev => prev ? { ...prev, email: e.target.value } : null)}
+                />
+              </div>
+
+              {/* Teléfono */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                  Teléfono
+                </label>
+                <input
+                  type="tel"
+                  placeholder="Ej. 8091234567"
+                  className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+                  value={editingUser.phone}
+                  onChange={(e) => setEditingUser(prev => prev ? { ...prev, phone: e.target.value } : null)}
+                />
+              </div>
+
+              {/* Rol */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                  Rol en la Empresa
+                </label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(prev => prev ? { ...prev, role: 'messenger' } : null)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      editingUser.role === 'messenger'
+                        ? 'border-[#5b8af9] bg-[#5b8af9]/15 text-[#5b8af9]'
+                        : 'border-slate-200 dark:border-[#252540] bg-transparent text-slate-400 dark:text-[#6b6b8a] hover:border-slate-300 dark:hover:border-[#252540]/80'
+                    }`}
+                  >
+                    Mensajero
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(prev => prev ? { ...prev, role: 'operator' } : null)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      editingUser.role === 'operator'
+                        ? 'border-[#5b8af9] bg-[#5b8af9]/15 text-[#5b8af9]'
+                        : 'border-slate-200 dark:border-[#252540] bg-transparent text-slate-400 dark:text-[#6b6b8a] hover:border-slate-300 dark:hover:border-[#252540]/80'
+                    }`}
+                  >
+                    Vendedor / Operador
+                  </button>
+                </div>
+              </div>
+
+              {/* Estado Activo */}
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">Cuenta Activa</span>
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded text-[#5b8af9] focus:ring-[#5b8af9] bg-slate-50 dark:bg-[#0b0b14] border-slate-200 dark:border-[#252540]"
+                  checked={editingUser.active}
+                  onChange={(e) => setEditingUser(prev => prev ? { ...prev, active: e.target.checked } : null)}
+                />
+              </div>
+
+              {/* Nueva Contraseña (Opcional) */}
+              <div className="flex flex-col gap-1 mt-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                  Nueva Contraseña <span className="text-[9px] text-[#6b6b8a] normal-case">(Opcional, dejar vacío para no cambiar)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="Nueva contraseña"
+                  className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+                  value={editingUser.password || ''}
+                  onChange={(e) => setEditingUser(prev => prev ? { ...prev, password: e.target.value } : null)}
+                />
+              </div>
+
+              {/* Botón de Enviar */}
+              <button
+                type="submit"
+                disabled={editLoading}
+                className="w-full mt-2 py-3 bg-[#5b8af9] hover:bg-[#3a68e0] text-[#0b0b14] font-extrabold text-sm rounded-xl transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 shadow-lg"
+              >
+                {editLoading ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
+            </form>
           </div>
         </div>
       )}

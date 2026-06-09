@@ -79,9 +79,10 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     external_source?: string;
     total_amount?: number;
     products?: string;
+    scheduled_at?: string | null;
   }>();
 
-  const { customer, location_link, delivery_fee = 0, messenger_id, notes, external_ref, external_source, total_amount = 0, products } = body;
+  const { customer, location_link, delivery_fee = 0, messenger_id, notes, external_ref, external_source, total_amount = 0, products, scheduled_at } = body;
 
   if (!customer?.name || !customer?.phone) {
     return c.json({ error: 'Nombre y teléfono del cliente requeridos' }, 400);
@@ -115,7 +116,7 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
           tenant_id, customer_id, location_link, delivery_fee,
           messenger_id, state, assigned_at,
           notes, external_ref, external_source, operator_id,
-          total_amount, products
+          total_amount, products, scheduled_at
         ) VALUES (
           ${user.tenant_id},
           ${cust.id},
@@ -129,7 +130,8 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
           ${external_source ?? null},
           ${user.sub},
           ${total_amount},
-          ${products ?? null}
+          ${products ?? null},
+          ${scheduled_at ?? null}
         )
         RETURNING *
       `;
@@ -166,6 +168,43 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
   }
 
   return c.json({ ...delivery, customer: cust }, 201);
+});
+
+// Obtener envíos del propio cliente (rol customer)
+deliveries.get('/my-deliveries', auth, async (c) => {
+  const session = c.get('user');
+
+  if (session.role !== 'customer') {
+    return c.json({ error: 'Solo los clientes autorizados pueden ver sus envíos' }, 403);
+  }
+
+  const [profile] = await sql`
+    SELECT phone FROM users WHERE id = ${session.sub} LIMIT 1
+  `;
+
+  if (!profile || !profile.phone) {
+    return c.json({ error: 'El perfil no tiene un número de teléfono asociado' }, 400);
+  }
+
+  const rows = await sql`
+    SELECT 
+      d.id, d.state, d.delivery_fee, d.location_link, d.address_override,
+      d.assigned_at, d.delivered_at, d.created_at, d.notes,
+      d.proof_img, d.proof_signature, d.total_amount, d.products,
+      c.name AS customer_name, c.phone AS customer_phone,
+      c.address AS customer_address, c.reference AS customer_reference,
+      u.name AS messenger_name, u.phone AS messenger_phone,
+      u.latitude AS messenger_latitude, u.longitude AS messenger_longitude,
+      u.location_updated_at AS messenger_location_updated_at
+    FROM deliveries d
+    JOIN customers c ON c.id = d.customer_id
+    LEFT JOIN users u ON u.id = d.messenger_id
+    WHERE c.phone = ${profile.phone} AND d.tenant_id = ${session.tenant_id}
+    ORDER BY d.created_at DESC
+    LIMIT 100
+  `;
+
+  return c.json(rows);
 });
 
 // ── Detalle de un envío ──────────────────────────────────────

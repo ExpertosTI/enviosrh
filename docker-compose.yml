@@ -123,6 +123,13 @@ services:
         - traefik.http.routers.enviosrh-web.tls.certresolver=letsencryptresolver
         - traefik.http.routers.enviosrh-web.service=enviosrh-web-svc
         - traefik.http.routers.enviosrh-web.middlewares=enviosrh-security
+        # Catálogo en la web principal
+        - traefik.http.routers.enviosrh-main-app.rule=Host(`renace.tech`) && PathPrefix(`/enviosapp`)
+        - traefik.http.routers.enviosrh-main-app.entrypoints=websecure
+        - traefik.http.routers.enviosrh-main-app.tls=true
+        - traefik.http.routers.enviosrh-main-app.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.enviosrh-main-app.service=enviosrh-web-svc
+        - traefik.http.routers.enviosrh-main-app.middlewares=enviosrh-security
         - traefik.http.services.enviosrh-web-svc.loadbalancer.server.port=80
         - traefik.http.services.enviosrh-web-svc.loadbalancer.healthcheck.path=/healthz
         # Security headers

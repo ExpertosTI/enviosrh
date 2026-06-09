@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { publicApi } from '../../lib/api';
 import type { Tenant } from '../../types';
 import L from 'leaflet';
-import { IconPackage, IconCheck, IconMotorbike, IconMap, IconNavigate } from '../../components/Icons';
+import { IconPackage, IconCheck, IconMotorbike, IconMap, IconNavigate, IconMessage, IconSend } from '../../components/Icons';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { applyTenantTheme } from '../../lib/theme';
 
@@ -60,6 +60,16 @@ export function MessengerPortal() {
   const routePolylineRef = useRef<L.Polyline | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
 
+  // Firma digital y foto de entrega
+  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasSig, setHasSig] = useState(false);
+  const [sigUrl, setSigUrl] = useState<string | null>(null);
+  const [proofImgUrl, setProofImgUrl] = useState<string | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+
   // ── PWA: capturar evento de instalación ───────────────────
   useEffect(() => {
     const handler = (e: Event) => {
@@ -70,6 +80,62 @@ export function MessengerPortal() {
     window.addEventListener('beforeinstallprompt', handler as EventListener);
     return () => window.removeEventListener('beforeinstallprompt', handler as EventListener);
   }, [installDismissed]);
+
+  // ── Chat Realtime ──
+  interface ChatMessage {
+    id: string;
+    sender: 'messenger' | 'customer';
+    message: string;
+    created_at: string;
+  }
+  const [showChat, setShowChat] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMsg, setNewMsg] = useState('');
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const loadMessages = useCallback(async () => {
+    if (!token || !showChat) return;
+    try {
+      const msgs = await publicApi.get<ChatMessage[]>(`/p/m/${token}/chat`);
+      setMessages(msgs);
+    } catch (e) {
+      console.warn('Error loading chat messages:', e);
+    }
+  }, [token, showChat]);
+
+  // Polling del chat
+  useEffect(() => {
+    if (!showChat) return;
+    loadMessages();
+    const interval = setInterval(() => {
+      loadMessages();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [showChat, loadMessages]);
+
+  // Scroll al final
+  useEffect(() => {
+    if (showChat) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, showChat]);
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token || !newMsg.trim() || sendingMsg) return;
+    setSendingMsg(true);
+    try {
+      const sent = await publicApi.post<ChatMessage>(`/p/m/${token}/chat`, { message: newMsg });
+      setMessages((prev) => [...prev, sent]);
+      setNewMsg('');
+    } catch (err) {
+      console.error('Error sending message:', err);
+    } finally {
+      setSendingMsg(false);
+    }
+  }
+
 
   const handleInstall = async () => {
     if (!installPrompt) return;
@@ -103,8 +169,52 @@ export function MessengerPortal() {
     return () => { applyTenantTheme(null); };
   }, [delivery?.tenant]);
 
-  // ── GPS: iniciar watchPosition apenas se cargue el portal ──
+  // ── GPS: iniciar watchPosition o plugin nativo según entorno ──
   const startGps = useCallback(() => {
+    // 1. Detectar si corre bajo Capacitor Móvil
+    const isCapacitor = (window as any).Capacitor !== undefined;
+
+    if (isCapacitor) {
+      setGpsState('requesting');
+      const registerNativeBgGps = async () => {
+        try {
+          const { registerPlugin } = await import('@capacitor/core');
+          const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
+          
+          // Solicitar y observar coordenadas nativamente
+          const watcherId = await BackgroundGeolocation.addWatcher(
+            {
+              backgroundMessage: "Transmitiendo tu ubicación en tiempo real...",
+              backgroundTitle: "EnvíosRH activo",
+              requestPermissions: true,
+              stale: false,
+              distanceFilter: 2 // Reportar cada 2 metros de movimiento
+            },
+            (location: any, error: any) => {
+              if (error) {
+                console.error("Nativo GPS watcher error:", error);
+                setGpsState('error');
+                return;
+              }
+              if (location) {
+                const newCoords: [number, number] = [location.latitude, location.longitude];
+                setCoords(newCoords);
+                setGpsAccuracy(location.accuracy || 10);
+                setGpsState('active');
+              }
+            }
+          );
+          watchIdRef.current = watcherId as any;
+        } catch (err) {
+          console.error("No se pudo iniciar GPS en segundo plano nativo:", err);
+          setGpsState('error');
+        }
+      };
+      registerNativeBgGps();
+      return;
+    }
+
+    // 2. Fallback estándar para Navegador Web
     if (!navigator.geolocation) {
       setGpsState('error');
       return;
@@ -156,7 +266,15 @@ export function MessengerPortal() {
     }
     return () => {
       if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        const isCapacitor = (window as any).Capacitor !== undefined;
+        if (isCapacitor) {
+          import('@capacitor/core').then(({ registerPlugin }) => {
+            const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
+            BackgroundGeolocation.removeWatcher({ id: watchIdRef.current as any }).catch((err: any) => console.error(err));
+          });
+        } else {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
         watchIdRef.current = null;
       }
     };
@@ -352,13 +470,102 @@ export function MessengerPortal() {
   const handleDeliver = async () => {
     if (!token) return;
     setLoading(true); setApiError('');
+
+    let finalSigUrl = sigUrl;
+    // Upload de firma si hay dibujo pero no URL aún
+    if (hasSig && !sigUrl && signatureCanvasRef.current) {
+      try {
+        const blob = await new Promise<Blob>((res) => signatureCanvasRef.current!.toBlob((b) => res(b!), 'image/png'));
+        const file = new File([blob], 'firma.png', { type: 'image/png' });
+        const form = new FormData();
+        form.append('file', file);
+        const r = await fetch('/api/upload', { method: 'POST', body: form });
+        const data = await r.json();
+        finalSigUrl = data.url ?? null;
+        setSigUrl(finalSigUrl);
+      } catch { /* ignorar */ }
+    }
+
     try {
-      const res = await publicApi.post<{ ok: boolean; state: string }>(`/p/m/${token}/deliver`, { note: note || undefined });
+      const res = await publicApi.post<{ ok: boolean; state: string }>(`/p/m/${token}/deliver`, {
+        note: note || undefined,
+        proof_img: proofImgUrl ?? undefined,
+        proof_signature: finalSigUrl ?? undefined,
+      });
       setDelivery((d) => d ? { ...d, state: res.state as any } : null);
     } catch (err) {
       setApiError(err instanceof Error ? err.message : 'Error al confirmar entrega');
     } finally { setLoading(false); }
   };
+
+  // ── Helpers de firma ──────────────────────────────────────
+  function getCanvasPoint(e: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
+    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function sigPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = getCanvasPoint(e);
+    lastPointRef.current = p;
+    setIsDrawing(true);
+    setHasSig(true);
+    const ctx = signatureCanvasRef.current?.getContext('2d');
+    if (ctx) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#e8e8f4';
+      ctx.fill();
+    }
+  }
+
+  function sigPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!isDrawing || !lastPointRef.current) return;
+    const ctx = signatureCanvasRef.current?.getContext('2d');
+    const p = getCanvasPoint(e);
+    if (ctx) {
+      ctx.beginPath();
+      ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = '#e8e8f4';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    lastPointRef.current = p;
+  }
+
+  function sigPointerUp() {
+    setIsDrawing(false);
+    lastPointRef.current = null;
+  }
+
+  function clearSignature() {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSig(false);
+    setSigUrl(null);
+  }
+
+  async function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingProof(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const data = await r.json();
+      setProofImgUrl(data.url ?? null);
+    } catch {
+      setApiError('Error al subir foto');
+    } finally {
+      setUploadingProof(false);
+    }
+  }
 
   // ── Loading / error inicial ────────────────────────────────
   if (!delivery) {
@@ -444,6 +651,16 @@ export function MessengerPortal() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Chat con Cliente */}
+          {delivery && (
+            <button
+              onClick={() => setShowChat(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#5b8af9]/15 text-[#5b8af9] border border-[#5b8af9]/25 cursor-pointer text-[10px] font-bold hover:bg-[#5b8af9]/25 transition-all"
+            >
+              <IconMessage size={13} /> Chat
+            </button>
+          )}
+
           {/* Indicador GPS */}
           <button
             onClick={gpsState === 'idle' || gpsState === 'error' ? startGps : undefined}
@@ -637,6 +854,61 @@ export function MessengerPortal() {
         {/* Acción: Confirmar entrega */}
         {isInTransit && (
           <div className="flex flex-col gap-3 pt-2 border-t border-[#252540]">
+            {/* Foto de Entrega (Prueba de Entrega) */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">Foto de Entrega (Opcional)</label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#252540] hover:border-[#5b8af9] bg-[#0b0b14] text-[#e8e8f4] text-xs font-bold transition-all cursor-pointer"
+                >
+                  Tomar Foto
+                </button>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  ref={photoInputRef}
+                  className="hidden"
+                  onChange={handlePhotoCapture}
+                />
+                {uploadingProof && (
+                  <span className="text-xs text-[#6b6b8a]">Subiendo foto...</span>
+                )}
+                {proofImgUrl && (
+                  <img src={proofImgUrl} alt="Prueba de entrega" className="w-12 h-12 object-cover rounded-lg border border-green-500/30 shrink-0" />
+                )}
+              </div>
+            </div>
+
+            {/* Firma del Cliente */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">Firma del Cliente (Opcional)</label>
+                {hasSig && (
+                  <button
+                    type="button"
+                    onClick={clearSignature}
+                    className="text-[10px] text-red-500 hover:underline bg-transparent border-0 cursor-pointer font-bold"
+                  >
+                    Borrar
+                  </button>
+                )}
+              </div>
+              <div className="relative w-full h-[120px] rounded-xl bg-[#0b0b14] border border-[#252540] overflow-hidden">
+                <canvas
+                  ref={signatureCanvasRef}
+                  width={350}
+                  height={120}
+                  onPointerDown={sigPointerDown}
+                  onPointerMove={sigPointerMove}
+                  onPointerUp={sigPointerUp}
+                  className="w-full h-full cursor-crosshair touch-none"
+                />
+              </div>
+            </div>
+
             <textarea
               className="w-full bg-[#0b0b14] border border-[#252540] rounded-xl px-4 py-3 text-[#e8e8f4] text-sm outline-none focus:border-[#22c55e] focus:ring-1 focus:ring-[#22c55e]/30 resize-none placeholder:text-[#3a3a58]"
               placeholder="Nota de entrega (opcional)…"
@@ -646,7 +918,7 @@ export function MessengerPortal() {
             />
             <button
               onClick={handleDeliver}
-              disabled={loading}
+              disabled={loading || uploadingProof}
               className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#22c55e] text-[#0b0b14] font-extrabold text-base hover:bg-[#1f9e4c] active:scale-[.98] transition-all disabled:opacity-40 border-0 cursor-pointer shadow-lg shadow-[#22c55e]/25"
             >
               <IconCheck size={20} color="#0b0b14" />
@@ -679,6 +951,83 @@ export function MessengerPortal() {
           </div>
         )}
       </div>
+      {/* ── Overlay Chat Modal Premium (Mensajero) ── */}
+      {showChat && delivery && (
+        <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-[#13131f] border-t sm:border border-[#252540] rounded-t-2xl sm:rounded-2xl w-full max-w-md h-[90vh] sm:h-[600px] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-[#252540] flex justify-between items-center bg-[#0b0b14]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#5b8af9]/15 flex items-center justify-center font-bold text-[#5b8af9] text-xs">
+                  {delivery.customer.name?.charAt(0).toUpperCase() || 'C'}
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-[#e8e8f4]">{delivery.customer.name}</div>
+                  <div className="text-[9px] text-[#6b6b8a] flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#5b8af9] animate-pulse" /> Cliente del envío
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowChat(false)}
+                className="text-[#6b6b8a] hover:text-[#e8e8f4] bg-transparent border-0 cursor-pointer p-1.5 rounded-lg hover:bg-[#252540] transition-colors text-xs font-bold"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {/* Messages body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0b0b14]">
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 gap-2">
+                  <div className="w-10 h-10 rounded-full bg-[#252540]/60 flex items-center justify-center text-[#6b6b8a]">
+                    <IconMessage size={18} />
+                  </div>
+                  <p className="text-xs font-bold text-[#6b6b8a]">Di algo para iniciar el chat</p>
+                  <p className="text-[10px] text-[#3a3a58]">El cliente recibirá una notificación al ver su link de seguimiento.</p>
+                </div>
+              ) : (
+                messages.map((m) => {
+                  const isMe = m.sender === 'messenger';
+                  return (
+                    <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-sm ${
+                        isMe
+                          ? 'bg-[#5b8af9] text-white rounded-tr-none'
+                          : 'bg-[#1c1c30] text-[#e8e8f4] border border-[#252540] rounded-tl-none'
+                      }`}>
+                        <p className="break-words">{m.message}</p>
+                        <div className={`text-[8px] mt-1 text-right ${isMe ? 'text-white/75' : 'text-[#6b6b8a]'}`}>
+                          {new Date(m.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input form */}
+            <form onSubmit={handleSendMessage} className="p-3 border-t border-[#252540] flex gap-2 bg-[#13131f]">
+              <input
+                type="text"
+                value={newMsg}
+                onChange={(e) => setNewMsg(e.target.value)}
+                placeholder="Escribe un mensaje al cliente..."
+                className="flex-1 bg-[#0b0b14] border border-[#252540] rounded-xl px-3 py-2 text-xs outline-none text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+              />
+              <button
+                type="submit"
+                disabled={!newMsg.trim() || sendingMsg}
+                className="p-2.5 rounded-xl bg-[#5b8af9] hover:bg-[#3a68e0] text-white disabled:opacity-40 transition-colors border-0 cursor-pointer flex items-center justify-center"
+              >
+                <IconSend size={15} color="#ffffff" />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

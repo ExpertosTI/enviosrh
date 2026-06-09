@@ -74,6 +74,7 @@ portal.get('/c/:token', async (c) => {
       u.latitude AS messenger_latitude,
       u.longitude AS messenger_longitude,
       u.location_updated_at AS messenger_location_updated_at,
+      u.avatar_url AS messenger_avatar_url,
       t.name AS tenant_name,
       t.logo_url AS tenant_logo_url,
       t.primary_color AS tenant_primary_color,
@@ -106,6 +107,7 @@ portal.get('/c/:token', async (c) => {
     messenger_latitude: row.messenger_latitude ? Number(row.messenger_latitude) : null,
     messenger_longitude: row.messenger_longitude ? Number(row.messenger_longitude) : null,
     messenger_location_updated_at: row.messenger_location_updated_at,
+    messenger_avatar_url: row.messenger_avatar_url,
     delivery_fee: Number(row.delivery_fee),
     location_link: row.location_link,
     assigned_at: row.assigned_at,
@@ -315,7 +317,7 @@ portal.post('/m/:token/in-transit', async (c) => {
 // ── Portal mensajero: marcar entregado ───────────────────────
 portal.post('/m/:token/deliver', async (c) => {
   const { token } = c.req.param();
-  const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
+  const { note, proof_img, proof_signature } = await c.req.json<{ note?: string; proof_img?: string; proof_signature?: string }>().catch(() => ({ note: undefined, proof_img: undefined, proof_signature: undefined }));
 
   const [row] = await sql`
     SELECT id, state, messenger_id FROM deliveries WHERE messenger_token = ${token} LIMIT 1
@@ -327,7 +329,10 @@ portal.post('/m/:token/deliver', async (c) => {
 
   await sql`
     UPDATE deliveries
-    SET state = 'delivered', delivered_at = now(), messenger_note = ${note ?? null}
+    SET state = 'delivered', delivered_at = now(),
+        messenger_note = ${note ?? null},
+        proof_img = ${proof_img ?? null},
+        proof_signature = ${proof_signature ?? null}
     WHERE id = ${row.id}
   `;
   await sql`
@@ -360,6 +365,70 @@ portal.post('/m/:token/location', async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+// ── Portal cliente: obtener mensajes del chat ───────────────────
+portal.get('/c/:token/chat', async (c) => {
+  const { token } = c.req.param();
+  const [row] = await sql`SELECT id FROM deliveries WHERE customer_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'Envío no encontrado' }, 404);
+
+  const messages = await sql`
+    SELECT id, sender, message, created_at
+    FROM delivery_messages
+    WHERE delivery_id = ${row.id}
+    ORDER BY created_at ASC
+  `;
+  return c.json(messages);
+});
+
+// ── Portal cliente: enviar mensaje al chat ───────────────────────
+portal.post('/c/:token/chat', async (c) => {
+  const { token } = c.req.param();
+  const { message } = await c.req.json<{ message: string }>();
+  if (!message || !message.trim()) return c.json({ error: 'Mensaje vacío' }, 400);
+
+  const [row] = await sql`SELECT id FROM deliveries WHERE customer_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'Envío no encontrado' }, 404);
+
+  const [newMessage] = await sql`
+    INSERT INTO delivery_messages (delivery_id, sender, message)
+    VALUES (${row.id}, 'customer', ${message.trim()})
+    RETURNING id, sender, message, created_at
+  `;
+  return c.json(newMessage);
+});
+
+// ── Portal mensajero: obtener mensajes del chat ─────────────────
+portal.get('/m/:token/chat', async (c) => {
+  const { token } = c.req.param();
+  const [row] = await sql`SELECT id FROM deliveries WHERE messenger_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'Envío no encontrado' }, 404);
+
+  const messages = await sql`
+    SELECT id, sender, message, created_at
+    FROM delivery_messages
+    WHERE delivery_id = ${row.id}
+    ORDER BY created_at ASC
+  `;
+  return c.json(messages);
+});
+
+// ── Portal mensajero: enviar mensaje al chat ─────────────────────
+portal.post('/m/:token/chat', async (c) => {
+  const { token } = c.req.param();
+  const { message } = await c.req.json<{ message: string }>();
+  if (!message || !message.trim()) return c.json({ error: 'Mensaje vacío' }, 400);
+
+  const [row] = await sql`SELECT id FROM deliveries WHERE messenger_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'Envío no encontrado' }, 404);
+
+  const [newMessage] = await sql`
+    INSERT INTO delivery_messages (delivery_id, sender, message)
+    VALUES (${row.id}, 'messenger', ${message.trim()})
+    RETURNING id, sender, message, created_at
+  `;
+  return c.json(newMessage);
 });
 
 export default portal;

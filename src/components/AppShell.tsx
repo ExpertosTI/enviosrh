@@ -42,6 +42,7 @@ interface AppShellProps {
 export function AppShell({ children, nav }: AppShellProps) {
   const [currentUser, setCurrentUser] = useState(() => getSession());
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -111,10 +112,12 @@ export function AppShell({ children, nav }: AppShellProps) {
   }
 
   function handleLogout() {
-    if (window.confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-      logout();
-      navigate('/login');
-    }
+    setShowLogoutModal(true);
+  }
+
+  function confirmLogout() {
+    logout();
+    navigate('/login');
   }
 
   return (
@@ -329,6 +332,42 @@ export function AppShell({ children, nav }: AppShellProps) {
                 </button>
               </form>
             )}
+          </div>
+        </div>
+      )}
+      {/* ── Modal de confirmación de logout ─────────────────────────── */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-[#13131f] border border-[#252540] rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+            {/* Icon + Title */}
+            <div className="p-5 flex flex-col items-center gap-3 text-center">
+              <div className="w-14 h-14 rounded-full bg-[#ef4444]/10 flex items-center justify-center">
+                <IconLogout size={26} color="#ef4444" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-[#e8e8f4] text-base mb-1">¿Cerrar sesión?</h3>
+                <p className="text-xs text-[#6b6b8a] leading-relaxed">
+                  Serás redirigido al inicio de sesión.<br />
+                  Tus datos están guardados de forma segura.
+                </p>
+              </div>
+            </div>
+            {/* Actions */}
+            <div className="px-5 pb-5 flex gap-3">
+              <button
+                onClick={() => setShowLogoutModal(false)}
+                className="flex-1 py-3 rounded-xl bg-[#252540] text-[#e8e8f4] text-sm font-bold hover:bg-[#2f2f50] transition-colors border-0 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmLogout}
+                className="flex-1 py-3 rounded-xl bg-[#ef4444] text-white text-sm font-bold hover:bg-[#d43030] active:scale-[.97] transition-all border-0 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <IconLogout size={15} />
+                Cerrar sesión
+              </button>
+            </div>
           </div>
         </div>
       )}

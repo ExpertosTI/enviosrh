@@ -13,6 +13,7 @@ import { MessengerDashboard } from './views/messenger/Dashboard';
 import { MessengerDelivery } from './views/messenger/Delivery';
 import { CustomerTracking } from './views/customer/Tracking';
 import { MessengerPortal } from './views/messenger/MessengerPortal';
+import { FeaturesIndex } from './views/customer/FeaturesIndex';
 
 function RequireAuth({ children, role }: { children: React.ReactNode; role?: string }) {
   const user = getSession();
@@ -42,6 +43,7 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/tracking/:token" element={<CustomerTracking />} />
       <Route path="/m-portal/:token" element={<MessengerPortal />} />
+      <Route path="/enviosapp" element={<FeaturesIndex />} />
 
       {/* Raíz → redirige según rol */}
       <Route path="/" element={<HomeRedirect />} />
