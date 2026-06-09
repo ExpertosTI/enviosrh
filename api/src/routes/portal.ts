@@ -59,7 +59,7 @@ portal.get('/c/:token', async (c) => {
 
   const [row] = await sql`
     SELECT
-      d.id, d.state, d.delivery_fee,
+      d.id, d.state, d.delivery_fee, d.location_link,
       d.assigned_at, d.delivered_at,
       d.customer_confirmed, d.rating,
       d.messenger_note, d.notes,
@@ -107,6 +107,7 @@ portal.get('/c/:token', async (c) => {
     messenger_longitude: row.messenger_longitude ? Number(row.messenger_longitude) : null,
     messenger_location_updated_at: row.messenger_location_updated_at,
     delivery_fee: Number(row.delivery_fee),
+    location_link: row.location_link,
     assigned_at: row.assigned_at,
     delivered_at: row.delivered_at,
     customer_confirmed: row.customer_confirmed,

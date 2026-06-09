@@ -57,6 +57,8 @@ export function MessengerPortal() {
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const courierMarkerRef = useRef<L.Marker | null>(null);
   const destinationMarkerRef = useRef<L.Marker | null>(null);
+  const routePolylineRef = useRef<L.Polyline | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
 
   // ── PWA: capturar evento de instalación ───────────────────
   useEffect(() => {
@@ -218,6 +220,15 @@ export function MessengerPortal() {
       mapRef.current.setView(dest, 15);
       destinationMarkerRef.current?.setLatLng(dest);
     }
+
+    return () => {
+      if (mapRef.current) {
+        if (routePolylineRef.current) {
+          mapRef.current.removeLayer(routePolylineRef.current);
+          routePolylineRef.current = null;
+        }
+      }
+    };
   }, [delivery?.id]);
 
   // ── Mapa: alternar tile al cambiar tema ────────────────────
@@ -256,6 +267,58 @@ export function MessengerPortal() {
       courierMarkerRef.current.setLatLng(coords).setIcon(messengerIcon);
     }
   }, [coords]);
+
+  // Actualizar ruta y tiempos (OSRM)
+  useEffect(() => {
+    if (!mapRef.current || !coords || !delivery || delivery.state !== 'in_transit') {
+      if (routePolylineRef.current && mapRef.current) {
+        mapRef.current.removeLayer(routePolylineRef.current);
+        routePolylineRef.current = null;
+      }
+      setRouteInfo(null);
+      return;
+    }
+
+    const dest = getDestinationCoords();
+    if (!dest) return;
+
+    // Consultar API OSRM
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords[1]},${coords[0]};${dest[1]},${dest[0]}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.code === 'Ok' && data.routes?.[0]) {
+          const route = data.routes[0];
+          const distanceKm = (route.distance / 1000).toFixed(1);
+          const durationMin = Math.round(route.duration / 60);
+
+          setRouteInfo({
+            distance: `${distanceKm} km`,
+            duration: `${durationMin} min`,
+          });
+
+          // Dibujar ruta
+          const coordinates = route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
+          
+          if (!mapRef.current) return;
+
+          if (!routePolylineRef.current) {
+            routePolylineRef.current = L.polyline(coordinates, {
+              color: '#f59e0b',
+              weight: 4,
+              opacity: 0.8,
+              dashArray: '5, 10'
+            }).addTo(mapRef.current);
+          } else {
+            routePolylineRef.current.setLatLngs(coordinates);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('[Routing Messenger] Error:', err);
+      });
+  }, [coords, delivery?.state]);
 
   // ── Centrar mapa en posición actual ───────────────────────
   const recenterMap = () => {
@@ -427,6 +490,17 @@ export function MessengerPortal() {
       {/* ── Mapa ─────────────────────────────────────────────── */}
       <div className="relative flex-1 min-h-[50vh] md:min-h-[380px] z-10">
         <div ref={mapContainerRef} className="w-full h-full bg-[#0b0b14]" style={{ minHeight: '50vh' }} />
+
+        {/* Indicador de ruta en tiempo real */}
+        {routeInfo && (
+          <div className="absolute top-3 left-3 z-[999] bg-[#13131f] border border-[#252540] rounded-xl p-3 shadow-lg flex flex-col gap-1 transition-all">
+            <span className="text-[9px] text-[#6b6b8a] uppercase tracking-wider font-bold">A destino</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-base font-black text-white">{routeInfo.duration}</span>
+              <span className="text-[10px] text-[#6b6b8a]">{routeInfo.distance}</span>
+            </div>
+          </div>
+        )}
 
         {/* Controles flotantes del mapa */}
         <div className="absolute top-3 right-3 z-[999] flex flex-col gap-2">

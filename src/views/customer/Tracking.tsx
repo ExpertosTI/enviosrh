@@ -23,6 +23,7 @@ interface PublicDelivery {
   messenger_longitude: number | null;
   messenger_location_updated_at: string | null;
   delivery_fee: number;
+  location_link: string | null;
   pre_confirmed: boolean;
   can_confirm: boolean;
   rating: number | null;
@@ -75,11 +76,14 @@ export function CustomerTracking() {
   const [rating, setRating] = useState(0);
   const [rated, setRated] = useState(false);
 
+  const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const messengerMarkerRef = useRef<L.Marker | null>(null);
   const destinationMarkerRef = useRef<L.Marker | null>(null);
+  const routePolylineRef = useRef<L.Polyline | null>(null);
 
   // Cargar datos
   const loadDelivery = (isSilent = false) => {
@@ -121,7 +125,11 @@ export function CustomerTracking() {
 
   // Parsear coordenadas del cliente
   const getDestinationCoords = (): [number, number] => {
-    return [18.4861, -69.9312];
+    if (delivery?.location_link) {
+      const match = delivery.location_link.match(/([-\d.]+),\s*([-\d.]+)/);
+      if (match) return [Number(match[1]), Number(match[2])];
+    }
+    return [18.4861, -69.9312]; // Default: Santo Domingo
   };
 
   // Inicializar Leaflet Map
@@ -168,12 +176,16 @@ export function CustomerTracking() {
 
     return () => {
       if (mapRef.current) {
+        if (routePolylineRef.current) {
+          mapRef.current.removeLayer(routePolylineRef.current);
+          routePolylineRef.current = null;
+        }
         mapRef.current.remove();
         mapRef.current = null;
         tileLayerRef.current = null;
       }
     };
-  }, [delivery?.state, delivery?.pre_confirmed]);
+  }, [delivery?.pre_confirmed]);
 
   // Actualizar Tile Layer en base al tema global
   useEffect(() => {
@@ -189,6 +201,15 @@ export function CustomerTracking() {
     window.addEventListener('themechange', handleThemeChange);
     return () => window.removeEventListener('themechange', handleThemeChange);
   }, []);
+
+  // Actualizar marcador de destino cuando cambie el link de ubicación
+  useEffect(() => {
+    if (!mapRef.current || !delivery || !delivery.pre_confirmed) return;
+    const dest = getDestinationCoords();
+    if (destinationMarkerRef.current) {
+      destinationMarkerRef.current.setLatLng(dest);
+    }
+  }, [delivery?.location_link, delivery?.pre_confirmed]);
 
   // Actualizar ubicación en tiempo real del mensajero en el mapa
   useEffect(() => {
@@ -223,7 +244,7 @@ export function CustomerTracking() {
       // Ajustar vista para incluir cliente y mensajero
       const dest = getDestinationCoords();
       const bounds = L.latLngBounds([dest, [mLat, mLng]]);
-      mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+      mapRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
     } else {
       // Eliminar el marcador si ya no está en tránsito
       if (messengerMarkerRef.current && mapRef.current) {
@@ -231,6 +252,59 @@ export function CustomerTracking() {
         messengerMarkerRef.current = null;
       }
     }
+  }, [delivery?.messenger_latitude, delivery?.messenger_longitude, delivery?.state, delivery?.pre_confirmed]);
+
+  // Actualizar ruta y tiempos (OSRM)
+  useEffect(() => {
+    if (!mapRef.current || !delivery || delivery.state !== 'in_transit' || !delivery.messenger_latitude || !delivery.messenger_longitude || !delivery.pre_confirmed) {
+      if (routePolylineRef.current && mapRef.current) {
+        mapRef.current.removeLayer(routePolylineRef.current);
+        routePolylineRef.current = null;
+      }
+      setRouteInfo(null);
+      return;
+    }
+
+    const mLat = Number(delivery.messenger_latitude);
+    const mLng = Number(delivery.messenger_longitude);
+    const dest = getDestinationCoords();
+
+    // Consultar API OSRM
+    const url = `https://router.project-osrm.org/route/v1/driving/${mLng},${mLat};${dest[1]},${dest[0]}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.code === 'Ok' && data.routes?.[0]) {
+          const route = data.routes[0];
+          const distanceKm = (route.distance / 1000).toFixed(1);
+          const durationMin = Math.round(route.duration / 60);
+
+          setRouteInfo({
+            distance: `${distanceKm} km`,
+            duration: `${durationMin} min`,
+          });
+
+          // Dibujar ruta
+          const coordinates = route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
+          
+          if (!mapRef.current) return;
+
+          if (!routePolylineRef.current) {
+            routePolylineRef.current = L.polyline(coordinates, {
+              color: '#5b8af9',
+              weight: 4,
+              opacity: 0.8,
+              dashArray: '5, 10'
+            }).addTo(mapRef.current);
+          } else {
+            routePolylineRef.current.setLatLngs(coordinates);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('[Routing] Error:', err);
+      });
   }, [delivery?.messenger_latitude, delivery?.messenger_longitude, delivery?.state, delivery?.pre_confirmed]);
 
   async function confirmOrderDetails() {
@@ -400,6 +474,15 @@ export function CustomerTracking() {
         {delivery?.state === 'in_transit' && (
           <div className="absolute bottom-3 left-3 z-[999] bg-[#f59e0b]/90 text-[#0b0b14] px-3 py-1.5 rounded-lg text-[10px] font-extrabold shadow-lg flex items-center gap-1.5 animate-pulse">
             <span className="w-2 h-2 rounded-full bg-[#0b0b14]"></span> MOTO EN CAMINO
+          </div>
+        )}
+        {routeInfo && (
+          <div className="absolute top-3 left-3 z-[999] bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-xl p-3 shadow-lg flex flex-col gap-1 transition-all">
+            <span className="text-[9px] text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider font-bold">Tiempo estimado</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-base font-black text-slate-800 dark:text-[#e8e8f4]">{routeInfo.duration}</span>
+              <span className="text-[10px] text-slate-500 dark:text-[#6b6b8a]">{routeInfo.distance}</span>
+            </div>
           </div>
         )}
       </div>
