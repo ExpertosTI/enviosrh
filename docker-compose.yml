@@ -32,7 +32,7 @@ services:
 
   # ── API backend ─────────────────────────────────────────────
   api:
-    image: enviosrh-api:latest
+    image: enviosrh-api:${COMMIT_HASH:-latest}
     build:
       context: ./api
       dockerfile: Dockerfile
@@ -53,6 +53,11 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+        order: start-first
+        failure_action: rollback
       resources:
         limits:
           cpus: "0.50"
@@ -84,7 +89,7 @@ services:
 
   # ── Frontend PWA ────────────────────────────────────────────
   web:
-    image: enviosrh-web:latest
+    image: enviosrh-web:${COMMIT_HASH:-latest}
     build:
       context: .
       dockerfile: Dockerfile.web
@@ -93,6 +98,11 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+        order: start-first
+        failure_action: rollback
       resources:
         limits:
           cpus: "0.30"
