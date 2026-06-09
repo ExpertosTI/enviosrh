@@ -114,3 +114,54 @@ export async function sendOperatorAlertEmail(subject: string, text: string) {
     console.error(`[Email] Error enviando alerta administrativa:`, error);
   }
 }
+
+/**
+ * Envía correo de bienvenida con credenciales a un nuevo colaborador
+ */
+export async function sendEmployeeWelcomeEmail(
+  to: string,
+  employeeName: string,
+  role: string,
+  passwordPlain: string,
+  companyNameStr: string,
+  companySlug: string
+) {
+  const loginLink = `${appUrl()}/login`;
+  const roleLabel = role === 'operator' ? 'Vendedor / Operador' : 'Mensajero';
+  const mailOptions = {
+    from: `"${companyNameStr}" <${process.env.SMTP_USER ?? 'info@renace.tech'}>`,
+    to,
+    subject: `🎉 Bienvenido a ${companyNameStr} - Tus credenciales de acceso`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #252540; border-radius: 12px; background-color: #13131f; color: #e8e8f4;">
+        <h2 style="color: #5b8af9; border-bottom: 1px solid #252540; padding-bottom: 10px;">¡Hola, ${employeeName}!</h2>
+        <p>Has sido registrado como colaborador en <strong>${companyNameStr}</strong> con el rol de <strong>${roleLabel}</strong>.</p>
+        
+        <p>A continuación se detallan tus credenciales de acceso a la plataforma:</p>
+        
+        <div style="background-color: #0b0b14; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #252540; font-size: 14px;">
+          <p style="margin: 0 0 8px 0;"><strong>Código de la Empresa (Slug):</strong> <span style="font-family: monospace; color: #f59e0b; font-size: 15px;">${companySlug}</span></p>
+          <p style="margin: 0 0 8px 0;"><strong>Usuario (Email):</strong> <span style="font-family: monospace; color: #5b8af9; font-size: 15px;">${to}</span></p>
+          <p style="margin: 0;"><strong>Contraseña Temporal:</strong> <span style="font-family: monospace; color: #22c55e; font-size: 15px;">${passwordPlain}</span></p>
+        </div>
+        
+        <p>Para ingresar al sistema, utiliza el siguiente enlace e ingresa los datos anteriores:</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${loginLink}" style="background-color: #5b8af9; color: #0b0b14; padding: 12px 24px; border-radius: 8px; font-weight: bold; text-decoration: none; display: inline-block;">Iniciar Sesión en EnvíosRH</a>
+        </div>
+        
+        <p style="color: #6b6b8a; font-size: 11px; margin-top: 30px; border-top: 1px solid #252540; padding-top: 10px;">
+          Este correo es automático. Por favor no compartas tu contraseña y cámbiala tras el primer ingreso si es necesario.
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`[Email] Correo de bienvenida enviado a colaborador: ${to}`);
+  } catch (error) {
+    console.error(`[Email] Error enviando correo de bienvenida a colaborador ${to}:`, error);
+  }
+}

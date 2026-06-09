@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles.css';
 import 'leaflet/dist/leaflet.css';
+import { GpsProvider } from './lib/GpsContext';
 
 // Aplicar tema guardado antes de que React monte (evita flash de modo oscuro)
 const savedTheme = localStorage.getItem('theme');
@@ -16,7 +17,10 @@ if (savedTheme === 'dark') {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <GpsProvider>
+        <App />
+      </GpsProvider>
     </BrowserRouter>
   </StrictMode>,
 );
+

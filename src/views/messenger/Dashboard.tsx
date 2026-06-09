@@ -5,6 +5,7 @@ import type { Delivery, DeliveryState } from '../../types';
 import { STATE_LABEL } from '../../types';
 import { AppShell, PageHeader } from '../../components/AppShell';
 import { IconPackage, IconMotorbike, IconCheck } from '../../components/Icons';
+import { useGps } from '../../lib/GpsContext';
 
 const BADGE_BG: Record<DeliveryState, string> = {
   draft:      'bg-[#1a1a30] text-[#6b6b8a]',
@@ -26,6 +27,7 @@ export function MessengerDashboard() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const { status: gpsStatus, coords, accuracy, requestGps } = useGps();
 
   useEffect(() => {
     setLoading(true);
@@ -55,8 +57,57 @@ export function MessengerDashboard() {
           </div>
         </div>
 
+        {/* ── Estado GPS ── */}
+        <div
+          className={`rounded-[14px] border p-3 flex items-center gap-3 transition-colors ${
+            gpsStatus === 'active'
+              ? 'bg-[#0a2a18] border-[#22c55e]/30'
+              : gpsStatus === 'denied'
+              ? 'bg-[#2a0a0a] border-[#ef4444]/30'
+              : 'bg-[#16162a] border-[#252540]'
+          }`}
+        >
+          <div
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              gpsStatus === 'active' ? 'bg-[#22c55e]/15' : gpsStatus === 'denied' ? 'bg-[#ef4444]/15' : 'bg-[#5b8af9]/10'
+            }`}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={gpsStatus === 'active' ? '#22c55e' : gpsStatus === 'denied' ? '#ef4444' : '#5b8af9'} strokeWidth="2.5">
+              <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className={`text-xs font-bold ${gpsStatus === 'active' ? 'text-[#22c55e]' : gpsStatus === 'denied' ? 'text-[#ef4444]' : 'text-[#6b6b8a]'}`}>
+              {gpsStatus === 'active' ? '📡 Ubicación Activa — Estás en línea' :
+               gpsStatus === 'requesting' ? '⏳ Buscando señal GPS…' :
+               gpsStatus === 'denied' ? '⛔ GPS Bloqueado' :
+               gpsStatus === 'unavailable' ? '❌ GPS no disponible' :
+               '📍 GPS Inactivo'}
+            </div>
+            <div className="text-[10px] text-[#6b6b8a] mt-0.5">
+              {gpsStatus === 'active' && accuracy !== null
+                ? `Precisión: ±${Math.round(accuracy)}m · Lat ${coords?.[0].toFixed(5)}, Lng ${coords?.[1].toFixed(5)}`
+                : gpsStatus === 'denied'
+                ? 'Activa el permiso de ubicación en la configuración de tu navegador'
+                : 'Tu ubicación se comparte automáticamente cuando GPS está activo'}
+            </div>
+          </div>
+          {(gpsStatus === 'idle' || gpsStatus === 'error') && (
+            <button
+              onClick={requestGps}
+              className="bg-[#5b8af9] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg border-0 cursor-pointer shrink-0"
+            >
+              Activar
+            </button>
+          )}
+          {gpsStatus === 'active' && (
+            <span className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse shrink-0" />
+          )}
+        </div>
+
         {loading && <div className="spinner" />}
         {error && <div className="banner-error">{error}</div>}
+
 
         {/* En camino */}
         {active.length > 0 && (

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { publicApi } from '../../lib/api';
 import type { Tenant } from '../../types';
@@ -7,6 +7,7 @@ import { IconPackage, IconCheck, IconMotorbike, IconMap, IconNavigate } from '..
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { applyTenantTheme } from '../../lib/theme';
 
+// ── Tipos ─────────────────────────────────────────────────────
 interface PublicMessengerDelivery {
   id: string;
   state: 'draft' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled';
@@ -23,69 +24,167 @@ interface PublicMessengerDelivery {
   tenant?: Tenant;
 }
 
+type GpsState = 'idle' | 'requesting' | 'active' | 'denied' | 'error';
+
+// ── Constante de throttle de reporte ─────────────────────────
+const REPORT_THROTTLE_MS = 6000;
+
+// ── Componente Principal ──────────────────────────────────────
 export function MessengerPortal() {
   const { token } = useParams<{ token: string }>();
   const [delivery, setDelivery] = useState<PublicMessengerDelivery | null>(null);
-  const [error, setError] = useState('');
+  const [apiError, setApiError] = useState('');
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState('');
-  const [gpsActive, setGpsActive] = useState(false);
-  const [simulating, setSimulating] = useState(false);
-  
-  // Coordenadas actuales del mensajero (reales o simuladas)
-  const [courierCoords, setCourierCoords] = useState<[number, number] | null>(null);
 
+  // GPS
+  const [gpsState, setGpsState] = useState<GpsState>('idle');
+  const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const lastReportRef = useRef<number>(0);
+
+  // PWA Install
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [installDismissed, setInstallDismissed] = useState(false);
+
+  // Mapa Leaflet
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const courierMarkerRef = useRef<L.Marker | null>(null);
   const destinationMarkerRef = useRef<L.Marker | null>(null);
 
-  // Cargar datos del envío
-  const loadDelivery = () => {
+  // ── PWA: capturar evento de instalación ───────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      if (!installDismissed) setShowInstallBanner(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler as EventListener);
+    return () => window.removeEventListener('beforeinstallprompt', handler as EventListener);
+  }, [installDismissed]);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setShowInstallBanner(false);
+      setInstallPrompt(null);
+    }
+  };
+
+  // ── Cargar datos del envío ────────────────────────────────
+  const loadDelivery = useCallback(() => {
     if (!token) return;
     publicApi.get<PublicMessengerDelivery>(`/p/m/${token}`)
       .then(setDelivery)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Error al cargar el envío'));
-  };
-
-  useEffect(() => {
-    loadDelivery();
+      .catch((err) => setApiError(err instanceof Error ? err.message : 'Error al cargar el envío'));
   }, [token]);
 
   useEffect(() => {
-    if (delivery?.tenant) {
-      applyTenantTheme(delivery.tenant);
-    }
-    return () => {
-      applyTenantTheme(null);
-    };
+    loadDelivery();
+  }, [loadDelivery]);
+
+  // Aplicar tema del tenant
+  useEffect(() => {
+    if (delivery?.tenant) applyTenantTheme(delivery.tenant);
+    return () => { applyTenantTheme(null); };
   }, [delivery?.tenant]);
 
-  // Extraer coordenadas del cliente si existen en el link de navegación
+  // ── GPS: iniciar watchPosition apenas se cargue el portal ──
+  const startGps = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGpsState('error');
+      return;
+    }
+    if (watchIdRef.current !== null) return;
+    setGpsState('requesting');
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const newCoords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        setCoords(newCoords);
+        setGpsAccuracy(pos.coords.accuracy);
+        setGpsState('active');
+      },
+      (err) => {
+        console.warn('[GPS Portal] Error:', err.code, err.message);
+        setGpsState(err.code === err.PERMISSION_DENIED ? 'denied' : 'error');
+        watchIdRef.current = null;
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }, []);
+
+  // Iniciar GPS al cargar, siempre
+  useEffect(() => {
+    // Verificar permiso actual
+    if ('permissions' in navigator) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        if (result.state === 'granted') {
+          startGps();
+        } else if (result.state === 'prompt') {
+          setGpsState('idle'); // solicitar manualmente con diálogo
+        } else {
+          setGpsState('denied');
+        }
+        result.onchange = () => {
+          if (result.state === 'granted') startGps();
+          else if (result.state === 'denied') {
+            setGpsState('denied');
+            if (watchIdRef.current !== null) {
+              navigator.geolocation.clearWatch(watchIdRef.current);
+              watchIdRef.current = null;
+            }
+          }
+        };
+      });
+    } else {
+      startGps();
+    }
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [startGps]);
+
+  // ── GPS: reportar ubicación al servidor con throttle ──────
+  useEffect(() => {
+    if (!token || !coords) return;
+    const now = Date.now();
+    if (now - lastReportRef.current < REPORT_THROTTLE_MS) return;
+    lastReportRef.current = now;
+    publicApi.post(`/p/m/${token}/location`, {
+      latitude: coords[0],
+      longitude: coords[1],
+    }).catch(() => {/* silencioso */});
+  }, [coords, token]);
+
+  // ── Mapa: extraer coordenadas de destino ──────────────────
   const getDestinationCoords = (): [number, number] | null => {
     if (!delivery) return null;
-    const gpsCoords = delivery.nav_google.match(/[-\d.]+,\s*[-\d.]+/)?.[0];
-    if (gpsCoords) {
-      const [lat, lng] = gpsCoords.split(',').map(Number);
-      return [lat, lng];
-    }
-    // Coordenada por defecto (Santo Domingo) si no se puede parsear
-    return [18.4861, -69.9312];
+    const match = delivery.nav_google.match(/([-\d.]+),\s*([-\d.]+)/);
+    if (match) return [Number(match[1]), Number(match[2])];
+    return [18.4861, -69.9312]; // Santo Domingo por defecto
   };
 
-  // Inicializar Mapa Leaflet
+  // ── Mapa: inicializar Leaflet ─────────────────────────────
   useEffect(() => {
     if (!delivery || !mapContainerRef.current) return;
-    
     const dest = getDestinationCoords();
     if (!dest) return;
 
     if (!mapRef.current) {
       mapRef.current = L.map(mapContainerRef.current, {
         zoomControl: false,
-        attributionControl: false
-      }).setView(dest, 14);
+        attributionControl: false,
+      }).setView(dest, 15);
 
       const isDark = document.documentElement.classList.contains('dark');
       tileLayerRef.current = L.tileLayer(
@@ -97,34 +196,25 @@ export function MessengerPortal() {
 
       setTimeout(() => { if (mapRef.current) mapRef.current.invalidateSize(); }, 300);
 
-      // Icono de destino (Cliente)
-      const customerIcon = L.divIcon({
-        className: 'custom-cust-marker',
-        html: `<div class="w-8 h-8 rounded-full bg-[#ef4444]/20 border-2 border-[#ef4444] flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.5)]">
-                 <div class="w-3.5 h-3.5 rounded-full bg-[#ef4444] animate-pulse"></div>
+      // Marcador destino (cliente)
+      const custIcon = L.divIcon({
+        className: '',
+        html: `<div style="width:34px;height:34px;border-radius:50%;background:rgba(239,68,68,0.18);border:2px solid #ef4444;display:flex;align-items:center;justify-content:center;box-shadow:0 0 14px rgba(239,68,68,0.5)">
+                 <div style="width:14px;height:14px;border-radius:50%;background:#ef4444;animation:pulse 1.2s infinite"></div>
                </div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16]
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
       });
-
-      destinationMarkerRef.current = L.marker(dest, { icon: customerIcon })
+      destinationMarkerRef.current = L.marker(dest, { icon: custIcon })
         .addTo(mapRef.current)
-        .bindPopup(`<b>Cliente:</b> ${delivery.customer.name ?? 'Dirección de Entrega'}`)
-        .openPopup();
+        .bindPopup(`<b>📦 Destino:</b> ${delivery.customer.name ?? 'Cliente'}`);
     } else {
-      mapRef.current.setView(dest, 14);
-      if (destinationMarkerRef.current) {
-        destinationMarkerRef.current.setLatLng(dest);
-      }
+      mapRef.current.setView(dest, 15);
+      destinationMarkerRef.current?.setLatLng(dest);
     }
-
-    return () => {
-      // No destruimos el mapa al desmontar el efecto de coordenadas,
-      // pero si cambia el id del envío sí querríamos reiniciar.
-    };
   }, [delivery?.id]);
 
-  // Cambiar tile del mapa al alternar tema
+  // ── Mapa: alternar tile al cambiar tema ────────────────────
   useEffect(() => {
     const handleThemeChange = () => {
       if (!tileLayerRef.current) return;
@@ -139,178 +229,140 @@ export function MessengerPortal() {
     return () => window.removeEventListener('themechange', handleThemeChange);
   }, []);
 
-  // Actualizar marcador del mensajero en el mapa
+  // ── Mapa: actualizar marcador del mensajero ────────────────
   useEffect(() => {
-    if (!mapRef.current || !courierCoords) return;
+    if (!mapRef.current || !coords) return;
 
     const messengerIcon = L.divIcon({
-      className: 'custom-courier-marker',
-      html: `<div class="w-9 h-9 rounded-full bg-[#5b8af9]/20 border-2 border-[#5b8af9] flex items-center justify-center shadow-[0_0_15px_rgba(91,138,249,0.6)]">
-               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5b8af9" stroke-width="2.5">
-                 <circle cx="12" cy="5" r="3" />
-                 <path d="M5 12h14l-4 8H9l-4-8z" />
+      className: '',
+      html: `<div style="width:40px;height:40px;border-radius:50%;background:rgba(91,138,249,0.2);border:2.5px solid #5b8af9;display:flex;align-items:center;justify-content:center;box-shadow:0 0 18px rgba(91,138,249,0.6)">
+               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5b8af9" stroke-width="2.5">
+                 <circle cx="12" cy="5" r="3"/><path d="M5 12h14l-4 8H9l-4-8z"/>
                </svg>
              </div>`,
-      iconSize: [36, 36],
-      iconAnchor: [18, 18]
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
     });
 
     if (!courierMarkerRef.current) {
-      courierMarkerRef.current = L.marker(courierCoords, { icon: messengerIcon }).addTo(mapRef.current);
+      courierMarkerRef.current = L.marker(coords, { icon: messengerIcon, zIndexOffset: 1000 }).addTo(mapRef.current);
     } else {
-      courierMarkerRef.current.setLatLng(courierCoords);
+      courierMarkerRef.current.setLatLng(coords).setIcon(messengerIcon);
     }
+  }, [coords]);
 
-    // Ajustar vista para contener ambos marcadores si están lejos
+  // ── Centrar mapa en posición actual ───────────────────────
+  const recenterMap = () => {
+    if (mapRef.current && coords) {
+      mapRef.current.flyTo(coords, 16, { animate: true, duration: 0.8 });
+    }
+  };
+
+  // ── Ajustar vista para incluir mensajero y destino ─────────
+  const fitBothMarkers = useCallback(() => {
+    if (!mapRef.current || !coords) return;
     const dest = getDestinationCoords();
     if (dest) {
-      const bounds = L.latLngBounds([dest, courierCoords]);
-      mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      const bounds = L.latLngBounds([dest, coords]);
+      mapRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
     }
-  }, [courierCoords]);
+  }, [coords, delivery]);
 
-  // Bucle de envío de ubicación al servidor
-  useEffect(() => {
-    if (!token || !courierCoords || delivery?.state !== 'in_transit') return;
-
-    const reportLocation = async () => {
-      try {
-        await publicApi.post(`/p/m/${token}/location`, {
-          latitude: courierCoords[0],
-          longitude: courierCoords[1]
-        });
-      } catch (err) {
-        console.error('Error reportando ubicación:', err);
-      }
-    };
-
-    reportLocation();
-    const interval = setInterval(reportLocation, 10000); // reportar cada 10s
-    return () => clearInterval(interval);
-  }, [courierCoords, delivery?.state, token]);
-
-  // Watch GPS Geolocation real
-  useEffect(() => {
-    if (delivery?.state !== 'in_transit' || simulating || !gpsActive) {
-      return;
-    }
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setCourierCoords([pos.coords.latitude, pos.coords.longitude]);
-      },
-      (err) => {
-        console.error('Error de geolocalización:', err);
-        setError('No se pudo acceder al GPS real. Activa simulación para pruebas.');
-        setGpsActive(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [gpsActive, delivery?.state, simulating]);
-
-  // Simulación de recorrido paso a paso
-  useEffect(() => {
-    if (!simulating || delivery?.state !== 'in_transit') {
-      setSimulating(false);
-      return;
-    }
-
-    const dest = getDestinationCoords();
-    if (!dest) return;
-
-    // Empezar a unos ~800 metros de distancia
-    const startLat = dest[0] - 0.006;
-    const startLng = dest[1] - 0.008;
-    let step = 0;
-    const totalSteps = 20;
-
-    setCourierCoords([startLat, startLng]);
-
-    const interval = setInterval(() => {
-      step++;
-      if (step >= totalSteps) {
-        setCourierCoords(dest);
-        setSimulating(false);
-        clearInterval(interval);
-      } else {
-        const ratio = step / totalSteps;
-        const currentLat = startLat + (dest[0] - startLat) * ratio;
-        const currentLng = startLng + (dest[1] - startLng) * ratio;
-        // Agregar pequeña desviación aleatoria para que parezca más realista
-        const jitterLat = (Math.random() - 0.5) * 0.0003;
-        const jitterLng = (Math.random() - 0.5) * 0.0003;
-        setCourierCoords([currentLat + jitterLat, currentLng + jitterLng]);
-      }
-    }, 4000); // Moverse cada 4 segundos
-
-    return () => clearInterval(interval);
-  }, [simulating, delivery?.state]);
-
-  // Iniciar tránsito
+  // ── Acciones principales ──────────────────────────────────
   const handleStartTransit = async () => {
     if (!token) return;
-    setLoading(true); setError('');
+    setLoading(true); setApiError('');
     try {
-      const res = await publicApi.post<{ ok: boolean, state: any }>(`/p/m/${token}/in-transit`);
-      setDelivery((d) => d ? { ...d, state: res.state } : null);
-      setGpsActive(true); // Activa el GPS automáticamente al iniciar ruta
+      const res = await publicApi.post<{ ok: boolean; state: string }>(`/p/m/${token}/in-transit`, {});
+      setDelivery((d) => d ? { ...d, state: res.state as any } : null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar ruta');
-    } finally {
-      setLoading(false);
-    }
+      setApiError(err instanceof Error ? err.message : 'Error al iniciar ruta');
+    } finally { setLoading(false); }
   };
 
-  // Entregar envío
   const handleDeliver = async () => {
     if (!token) return;
-    setLoading(true); setError('');
+    setLoading(true); setApiError('');
     try {
-      const res = await publicApi.post<{ ok: boolean, state: any }>(`/p/m/${token}/deliver`, { note: note || undefined });
-      setDelivery((d) => d ? { ...d, state: res.state } : null);
-      setGpsActive(false);
-      setSimulating(false);
+      const res = await publicApi.post<{ ok: boolean; state: string }>(`/p/m/${token}/deliver`, { note: note || undefined });
+      setDelivery((d) => d ? { ...d, state: res.state as any } : null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al confirmar entrega');
-    } finally {
-      setLoading(false);
-    }
+      setApiError(err instanceof Error ? err.message : 'Error al confirmar entrega');
+    } finally { setLoading(false); }
   };
 
+  // ── Loading / error inicial ────────────────────────────────
   if (!delivery) {
     return (
       <div className="min-h-screen bg-[#0b0b14] flex flex-col justify-center items-center">
-        {error ? (
-          <div className="max-w-sm p-4 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-[#2a0a0a] flex items-center justify-center mx-auto mb-4 border border-[#ef4444]/20">
-              <svg className="w-7 h-7 text-[#ef4444]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+        {apiError ? (
+          <div className="max-w-sm p-6 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#2a0a0a] flex items-center justify-center mx-auto mb-4 border border-[#ef4444]/20">
+              <svg className="w-8 h-8 text-[#ef4444]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
             </div>
-            <p className="text-sm text-[#ef4444] font-medium">{error}</p>
+            <p className="text-sm text-[#ef4444] font-semibold mb-1">No se pudo cargar el envío</p>
+            <p className="text-xs text-[#6b6b8a]">{apiError}</p>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
-            <svg className="w-8 h-8 text-[#5b8af9] animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-            </svg>
-            <span className="text-xs text-[#6b6b8a]">Cargando portal…</span>
+            <div className="relative w-12 h-12">
+              <div className="absolute inset-0 rounded-full border-2 border-[#5b8af9]/30 animate-ping" />
+              <div className="w-12 h-12 rounded-full border-2 border-t-[#5b8af9] border-[#252540] animate-spin" />
+            </div>
+            <span className="text-xs text-[#6b6b8a] font-medium">Cargando portal del mensajero…</span>
           </div>
         )}
       </div>
     );
   }
 
-  const isAssigned = delivery.state === 'assigned';
+  const isAssigned  = delivery.state === 'assigned';
   const isInTransit = delivery.state === 'in_transit';
   const isDelivered = delivery.state === 'delivered';
 
+  // ── Color del indicador GPS ───────────────────────────────
+  const gpsIndicatorColor = gpsState === 'active' ? '#22c55e' : gpsState === 'requesting' ? '#f59e0b' : '#ef4444';
+  const gpsLabel = gpsState === 'active' ? 'GPS Activo' : gpsState === 'requesting' ? 'Buscando GPS…' : gpsState === 'denied' ? 'GPS Bloqueado' : 'GPS Inactivo';
+
   return (
-    <div className="min-h-screen bg-[#0b0b14] flex flex-col">
-      {/* Header */}
-      <header className="bg-[#13131f]/90 backdrop-blur-md border-b border-[#252540] px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+    <div className="min-h-screen bg-[#0b0b14] flex flex-col select-none">
+
+      {/* ── Banner de instalación PWA ─────────────────────── */}
+      {showInstallBanner && !installDismissed && (
+        <div className="fixed top-0 inset-x-0 z-[1000] bg-gradient-to-r from-[#5b8af9] to-[#a75bf9] px-4 py-3 flex items-center gap-3 shadow-2xl">
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+              <rect x="5" y="2" width="14" height="20" rx="2"/><circle cx="12" cy="17" r="1"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-white font-bold text-xs">Instalar app del mensajero</div>
+            <div className="text-white/70 text-[10px]">Acceso rápido y GPS más preciso sin abrir el navegador</div>
+          </div>
+          <button
+            onClick={handleInstall}
+            className="bg-white text-[#5b8af9] font-bold text-xs px-3 py-1.5 rounded-lg border-0 cursor-pointer shrink-0"
+          >
+            Instalar
+          </button>
+          <button
+            onClick={() => { setShowInstallBanner(false); setInstallDismissed(true); }}
+            className="text-white/60 bg-transparent border-0 cursor-pointer p-1 shrink-0"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* ── Header ───────────────────────────────────────────── */}
+      <header
+        className="bg-[#13131f]/95 backdrop-blur-md border-b border-[#252540] px-4 py-3 flex items-center justify-between sticky z-20"
+        style={{ top: showInstallBanner && !installDismissed ? '60px' : '0' }}
+      >
         <div className="flex items-center gap-2.5">
           {delivery?.tenant?.logo_url ? (
             <img src={delivery.tenant.logo_url} alt="Logo" className="w-7 h-7 object-contain rounded" />
@@ -319,124 +371,177 @@ export function MessengerPortal() {
               <IconPackage size={16} className="text-primary" />
             </div>
           )}
-          <span className="font-bold text-sm text-[#e8e8f4]">
-            {delivery?.tenant?.name ?? 'EnvíosRH'}
-          </span>
+          <span className="font-bold text-sm text-[#e8e8f4]">{delivery?.tenant?.name ?? 'EnvíosRH'}</span>
         </div>
+
         <div className="flex items-center gap-2">
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/15 text-primary">
-            Portal Mensajero
-          </span>
+          {/* Indicador GPS */}
+          <button
+            onClick={gpsState === 'idle' || gpsState === 'error' ? startGps : undefined}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0b0b14] border border-[#252540] cursor-pointer"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${gpsState === 'active' ? 'animate-pulse' : ''}`}
+              style={{ background: gpsIndicatorColor }}
+            />
+            <span className="text-[10px] font-bold" style={{ color: gpsIndicatorColor }}>{gpsLabel}</span>
+          </button>
           <ThemeToggle />
         </div>
       </header>
 
-      {/* Mapa */}
-      <div className="relative flex-1 min-h-[260px] md:min-h-[380px] z-10">
-        <div ref={mapContainerRef} className="w-full h-full bg-[#0b0b14]" />
-        
-        {/* Controles flotantes en mapa */}
-        {isInTransit && (
-          <div className="absolute top-3 right-3 z-[999] flex flex-col gap-2">
+      {/* ── Banner GPS bloqueado ──────────────────────────────── */}
+      {gpsState === 'denied' && (
+        <div className="bg-[#2a0a0a] border-b border-[#ef4444]/30 px-4 py-2.5 flex items-center gap-3 z-10">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" className="shrink-0">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <p className="text-xs text-[#ef4444] flex-1">
+            GPS bloqueado. Ve a <strong>Configuración del navegador → Privacidad → Ubicación</strong> y permite el acceso a este sitio.
+          </p>
+        </div>
+      )}
+
+      {/* ── Banner solicitud GPS si está idle ─────────────────── */}
+      {gpsState === 'idle' && (
+        <div className="bg-[#1a1500] border-b border-[#f59e0b]/30 px-4 py-2.5 flex items-center gap-3 z-10">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" className="shrink-0">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <p className="text-xs text-[#f59e0b] flex-1">Para compartir tu ubicación en tiempo real, activa el GPS.</p>
+          <button
+            onClick={startGps}
+            className="bg-[#f59e0b] text-[#0b0b14] font-bold text-[10px] px-3 py-1 rounded-lg border-0 cursor-pointer shrink-0"
+          >
+            Activar GPS
+          </button>
+        </div>
+      )}
+
+      {/* ── Mapa ─────────────────────────────────────────────── */}
+      <div className="relative flex-1 min-h-[50vh] md:min-h-[380px] z-10">
+        <div ref={mapContainerRef} className="w-full h-full bg-[#0b0b14]" style={{ minHeight: '50vh' }} />
+
+        {/* Controles flotantes del mapa */}
+        <div className="absolute top-3 right-3 z-[999] flex flex-col gap-2">
+          {/* Recenter */}
+          {coords && (
             <button
-              onClick={() => { setSimulating(!simulating); if (!simulating) setGpsActive(false); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border-0 cursor-pointer shadow-lg ${
-                simulating
-                  ? 'bg-[#f59e0b] text-[#0b0b14]'
-                  : 'bg-[#13131f] text-[#f59e0b] border border-[#f59e0b]/20 hover:bg-[#252540]'
-              }`}
+              onClick={recenterMap}
+              title="Centrar en mi posición"
+              className="w-9 h-9 rounded-xl bg-[#13131f]/90 border border-[#252540] flex items-center justify-center text-[#5b8af9] hover:bg-[#5b8af9] hover:text-white transition-colors cursor-pointer shadow-lg"
             >
-              🚗 {simulating ? 'Simulación Activa' : 'Simular Ruta'}
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
+              </svg>
             </button>
+          )}
+          {/* Fit ambos marcadores */}
+          {coords && isInTransit && (
             <button
-              onClick={() => { setGpsActive(!gpsActive); if (!gpsActive) setSimulating(false); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border-0 cursor-pointer shadow-lg ${
-                gpsActive
-                  ? 'bg-[#22c55e] text-white'
-                  : 'bg-[#13131f] text-[#6b6b8a] border border-[#252540] hover:text-[#e8e8f4]'
-              }`}
+              onClick={fitBothMarkers}
+              title="Ver ruta completa"
+              className="w-9 h-9 rounded-xl bg-[#13131f]/90 border border-[#252540] flex items-center justify-center text-[#f59e0b] hover:bg-[#f59e0b] hover:text-[#0b0b14] transition-colors cursor-pointer shadow-lg"
             >
-              📡 GPS: {gpsActive ? 'Activo' : 'Apagado'}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+              </svg>
             </button>
+          )}
+        </div>
+
+        {/* Indicador de precisión GPS */}
+        {gpsState === 'active' && gpsAccuracy !== null && (
+          <div className="absolute bottom-3 left-3 z-[999] bg-[#13131f]/80 backdrop-blur-sm border border-[#252540] rounded-lg px-2.5 py-1 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse" />
+            <span className="text-[10px] text-[#6b6b8a] font-medium">
+              ±{Math.round(gpsAccuracy)}m
+            </span>
           </div>
         )}
       </div>
 
-      {/* Panel de Información */}
-      <div className="bg-[#13131f] border-t border-[#252540] p-4 flex flex-col gap-4 max-w-lg mx-auto w-full rounded-t-2xl shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-20">
-        {error && <div className="banner-error">{error}</div>}
+      {/* ── Panel de Información ──────────────────────────────── */}
+      <div className="bg-[#13131f] border-t border-[#252540] p-4 flex flex-col gap-4 max-w-lg mx-auto w-full rounded-t-2xl shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-20 pb-8">
 
-        {/* Cliente Card */}
-        <div className="flex items-start justify-between">
-          <div>
+        {apiError && (
+          <div className="bg-[#2a0a0a] border border-[#ef4444]/30 rounded-xl px-3 py-2.5 text-[#ef4444] text-xs font-semibold">
+            {apiError}
+          </div>
+        )}
+
+        {/* Cliente */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
             <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wider font-semibold">Cliente</div>
-            <h2 className="text-base font-bold text-[#e8e8f4] mt-0.5">{delivery.customer.name ?? 'Cliente'}</h2>
+            <h2 className="text-base font-bold text-[#e8e8f4] mt-0.5 truncate">{delivery.customer.name ?? 'Cliente'}</h2>
             {delivery.customer.phone && (
-              <a href={`tel:${delivery.customer.phone}`} className="text-xs text-[#5b8af9] font-medium hover:underline block mt-1">
+              <a href={`tel:${delivery.customer.phone}`} className="text-xs text-[#5b8af9] font-semibold hover:underline block mt-0.5">
                 📞 {delivery.customer.phone}
               </a>
             )}
           </div>
           {Number(delivery.delivery_fee) > 0 && (
-            <div className="bg-[#5b8af9]/10 rounded-xl px-3 py-2 text-right">
-              <div className="text-[9px] text-[#5b8af9] uppercase tracking-wider font-bold">Cobrar Envío</div>
+            <div className="bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-xl px-3 py-2 text-right shrink-0">
+              <div className="text-[9px] text-[#22c55e] uppercase tracking-wider font-bold">Cobrar</div>
               <div className="text-sm font-extrabold text-[#e8e8f4] mt-0.5">RD$ {Number(delivery.delivery_fee).toFixed(2)}</div>
             </div>
           )}
         </div>
 
-        {/* Dirección Card */}
+        {/* Dirección */}
         <div className="bg-[#0b0b14] border border-[#252540]/60 rounded-xl p-3">
-          <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wider font-semibold">Dirección de Entrega</div>
-          <p className="text-sm text-[#e8e8f4] mt-1 leading-relaxed">{delivery.customer.address}</p>
+          <div className="text-[10px] text-[#6b6b8a] uppercase tracking-wider font-semibold mb-1">Dirección de Entrega</div>
+          <p className="text-sm text-[#e8e8f4] leading-relaxed">{delivery.customer.address}</p>
           {delivery.customer.reference && (
             <p className="text-xs text-[#f59e0b] mt-1.5 font-medium">📍 {delivery.customer.reference}</p>
           )}
         </div>
 
-        {/* Notas Card */}
+        {/* Notas */}
         {delivery.notes && (
-          <div className="bg-[#2a1800]/25 border border-[#f59e0b]/20 rounded-xl p-3">
-            <div className="text-[10px] text-[#f59e0b] uppercase tracking-wider font-semibold">Instrucciones Especiales</div>
-            <p className="text-xs text-[#e8e8f4] mt-1">{delivery.notes}</p>
+          <div className="bg-[#2a1800]/30 border border-[#f59e0b]/20 rounded-xl p-3">
+            <div className="text-[10px] text-[#f59e0b] uppercase tracking-wider font-semibold mb-1">Instrucciones</div>
+            <p className="text-xs text-[#e8e8f4]">{delivery.notes}</p>
           </div>
         )}
 
-        {/* Botones de Navegación Externa */}
-        {isInTransit && (
+        {/* Botones de navegación externa */}
+        {(isAssigned || isInTransit) && (
           <div className="flex gap-2">
             <a
               href={delivery.nav_google} target="_blank" rel="noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#4285F4]/15 hover:bg-[#4285F4]/25 text-[#4285F4] text-xs font-bold transition-all border-0 cursor-pointer"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#4285F4]/12 hover:bg-[#4285F4]/22 text-[#4285F4] text-xs font-bold transition-all"
             >
               <IconMap size={14} /> Google Maps
             </a>
             <a
               href={delivery.nav_waze} target="_blank" rel="noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#35CAED]/15 hover:bg-[#35CAED]/25 text-[#35CAED] text-xs font-bold transition-all border-0 cursor-pointer"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#35CAED]/12 hover:bg-[#35CAED]/22 text-[#35CAED] text-xs font-bold transition-all"
             >
-              <IconNavigate size={14} /> Navegar en Waze
+              <IconNavigate size={14} /> Waze
             </a>
           </div>
         )}
 
-        {/* Acciones principales */}
+        {/* Acción: Salir a entregar */}
         {isAssigned && (
           <button
             onClick={handleStartTransit}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#f59e0b] text-[#0b0b14] font-extrabold text-base hover:bg-[#e08e00] active:scale-[.98] transition-all disabled:opacity-40 border-0 cursor-pointer shadow-lg shadow-[#f59e0b]/20 animate-pulse"
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#f59e0b] text-[#0b0b14] font-extrabold text-base hover:bg-[#e08e00] active:scale-[.98] transition-all disabled:opacity-40 border-0 cursor-pointer shadow-lg shadow-[#f59e0b]/25"
           >
             <IconMotorbike size={20} color="#0b0b14" />
-            {loading ? 'Iniciando entrega…' : 'Salir a Entregar'}
+            {loading ? 'Iniciando entrega…' : '🛵 Salir a Entregar'}
           </button>
         )}
 
+        {/* Acción: Confirmar entrega */}
         {isInTransit && (
           <div className="flex flex-col gap-3 pt-2 border-t border-[#252540]">
             <textarea
               className="w-full bg-[#0b0b14] border border-[#252540] rounded-xl px-4 py-3 text-[#e8e8f4] text-sm outline-none focus:border-[#22c55e] focus:ring-1 focus:ring-[#22c55e]/30 resize-none placeholder:text-[#3a3a58]"
-              placeholder="Añadir nota de entrega (opcional)…"
+              placeholder="Nota de entrega (opcional)…"
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -447,30 +552,32 @@ export function MessengerPortal() {
               className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[#22c55e] text-[#0b0b14] font-extrabold text-base hover:bg-[#1f9e4c] active:scale-[.98] transition-all disabled:opacity-40 border-0 cursor-pointer shadow-lg shadow-[#22c55e]/25"
             >
               <IconCheck size={20} color="#0b0b14" />
-              {loading ? 'Confirmando entrega…' : 'Confirmar Entrega'}
+              {loading ? 'Confirmando…' : '✅ Confirmar Entrega'}
             </button>
           </div>
         )}
 
+        {/* Estado: Entregado */}
         {isDelivered && (
-          <div className="bg-[#22c55e]/10 border border-[#22c55e]/30 rounded-xl p-4 flex flex-col items-center gap-2 text-center py-6">
-            <div className="w-10 h-10 rounded-full bg-[#22c55e]/20 flex items-center justify-center mb-1">
-              <IconCheck size={20} color="#22c55e" />
+          <div className="bg-[#22c55e]/10 border border-[#22c55e]/30 rounded-xl p-5 flex flex-col items-center gap-2 text-center">
+            <div className="w-12 h-12 rounded-full bg-[#22c55e]/20 flex items-center justify-center">
+              <IconCheck size={24} color="#22c55e" />
             </div>
-            <div className="font-extrabold text-[#22c55e] text-base">¡Envío Entregado con Éxito!</div>
-            <p className="text-xs text-[#6b6b8a] max-w-xs">El cliente ya ha sido notificado y puede ver el estado actualizado en su pantalla de seguimiento.</p>
+            <div className="font-extrabold text-[#22c55e] text-base">¡Envío Entregado!</div>
+            <p className="text-xs text-[#6b6b8a]">El cliente fue notificado automáticamente. ¡Buen trabajo! 🎉</p>
           </div>
         )}
 
+        {/* Estado: Cancelado */}
         {delivery.state === 'cancelled' && (
-          <div className="bg-[#ef4444]/10 border border-[#ef4444]/30 rounded-xl p-4 flex flex-col items-center gap-2 text-center py-6">
-            <div className="w-10 h-10 rounded-full bg-[#ef4444]/20 flex items-center justify-center mb-1">
-              <svg className="w-5 h-5 text-[#ef4444]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          <div className="bg-[#ef4444]/10 border border-[#ef4444]/30 rounded-xl p-5 flex flex-col items-center gap-2 text-center">
+            <div className="w-12 h-12 rounded-full bg-[#ef4444]/20 flex items-center justify-center">
+              <svg className="w-6 h-6 text-[#ef4444]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
             </div>
             <div className="font-extrabold text-[#ef4444] text-base">Envío Cancelado</div>
-            <p className="text-xs text-[#6b6b8a]">Este envío ha sido cancelado por el operador de despacho.</p>
+            <p className="text-xs text-[#6b6b8a]">Este envío fue cancelado por el operador.</p>
           </div>
         )}
       </div>

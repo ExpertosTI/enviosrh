@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { AppShell, PageHeader } from '../../components/AppShell';
 import { TenantSettings } from './TenantSettings';
+import { getSession } from '../../lib/auth';
 
 // ── Tipos ────────────────────────────────────────────────────
 interface StateCount { state: string; count: number; }
@@ -108,6 +109,50 @@ export function AdminPanel() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'sellers' | 'messengers' | 'customers' | 'settings'>('messengers');
   const [search, setSearch] = useState('');
+
+  // ── Modal de Registro de Colaboradores ──
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', role: 'messenger' as 'messenger' | 'operator' });
+  const [registerLoading, setRegisterLoading] = useState(false);
+  const [registerError, setRegisterError] = useState('');
+  const [createdCredentials, setCreatedCredentials] = useState<{ email: string; tempPassword: string; slug: string } | null>(null);
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegisterLoading(true);
+    setRegisterError('');
+    try {
+      const res = await api.post<{
+        message: string;
+        user: { id: string; name: string; email: string; role: string };
+        tempPassword: string;
+      }>('/users', registerForm);
+
+      const session = getSession();
+      const slug = session?.tenant?.slug ?? 'enviosrh';
+      
+      setCreatedCredentials({
+        email: res.user.email,
+        tempPassword: res.tempPassword,
+        slug
+      });
+
+      // Refrescar dashboard / datos
+      const updated = await api.get<AdminData>('/users/admin-dashboard');
+      setData(updated);
+    } catch (err) {
+      setRegisterError(err instanceof Error ? err.message : 'Error al registrar colaborador');
+    } finally {
+      setRegisterLoading(false);
+    }
+  };
+
+  const closeRegisterModal = () => {
+    setShowRegisterModal(false);
+    setRegisterForm({ name: '', email: '', phone: '', role: 'messenger' });
+    setRegisterError('');
+    setCreatedCredentials(null);
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -263,16 +308,30 @@ export function AdminPanel() {
 
               {/* Búsqueda */}
               {tab !== 'settings' && (
-                <div className="p-4 border-b border-slate-50 dark:border-[#252540]/60">
-                  <SearchInput
-                    value={search}
-                    onChange={setSearch}
-                    placeholder={
-                      tab === 'sellers' ? 'Buscar por nombre, email o teléfono…' :
-                      tab === 'messengers' ? 'Buscar mensajero por nombre, email o teléfono…' :
-                      'Buscar cliente por nombre, teléfono, email o dirección…'
-                    }
-                  />
+                <div className="p-4 border-b border-slate-50 dark:border-[#252540]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <SearchInput
+                      value={search}
+                      onChange={setSearch}
+                      placeholder={
+                        tab === 'sellers' ? 'Buscar por nombre, email o teléfono…' :
+                        tab === 'messengers' ? 'Buscar mensajero por nombre, email o teléfono…' :
+                        'Buscar cliente por nombre, teléfono, email o dirección…'
+                      }
+                    />
+                  </div>
+                  {(tab === 'messengers' || tab === 'sellers') && (
+                    <button
+                      onClick={() => setShowRegisterModal(true)}
+                      className="px-4 py-2 bg-[#5b8af9] hover:bg-[#5b8af9]/90 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-colors border-0 cursor-pointer self-start sm:self-auto"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                      </svg>
+                      Registrar Colaborador
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -443,6 +502,167 @@ export function AdminPanel() {
           </>
         )}
       </div>
+
+      {/* ── Modal de Registro de Colaborador ── */}
+      {showRegisterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl transition-all animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* Encabezado */}
+            <div className="p-5 border-b border-slate-100 dark:border-[#252540] flex justify-between items-center">
+              <h3 className="font-extrabold text-slate-800 dark:text-[#e8e8f4] text-base">
+                {createdCredentials ? '¡Colaborador Registrado!' : 'Registrar Nuevo Colaborador'}
+              </h3>
+              <button 
+                onClick={closeRegisterModal}
+                className="text-slate-400 hover:text-slate-600 dark:text-[#6b6b8a] dark:hover:text-[#e8e8f4] bg-transparent border-0 cursor-pointer p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#252540]"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            {!createdCredentials ? (
+              /* Formulario de registro */
+              <form onSubmit={handleRegister} className="p-5 flex flex-col gap-4">
+                {registerError && (
+                  <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl px-4 py-2.5 text-red-600 dark:text-[#ef4444] text-xs font-semibold">
+                    {registerError}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                    Nombre Completo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Juan Pérez"
+                    className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+                    value={registerForm.name}
+                    onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                    Correo Electrónico (Usuario)
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="Ej. juan.perez@empresa.com"
+                    className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+                    value={registerForm.email}
+                    onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                    Teléfono
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="Ej. 8091234567"
+                    className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
+                    value={registerForm.phone}
+                    onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
+                    Rol en la Empresa
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setRegisterForm({ ...registerForm, role: 'messenger' })}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        registerForm.role === 'messenger'
+                          ? 'bg-[#5b8af9]/15 border-[#5b8af9] text-[#5b8af9]'
+                          : 'bg-transparent border-slate-200 dark:border-[#252540] text-slate-500 dark:text-[#6b6b8a] hover:bg-slate-50 dark:hover:bg-[#0b0b14]/50'
+                      }`}
+                    >
+                      🛵 Mensajero
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegisterForm({ ...registerForm, role: 'operator' })}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        registerForm.role === 'operator'
+                          ? 'bg-[#5b8af9]/15 border-[#5b8af9] text-[#5b8af9]'
+                          : 'bg-transparent border-slate-200 dark:border-[#252540] text-slate-500 dark:text-[#6b6b8a] hover:bg-slate-50 dark:hover:bg-[#0b0b14]/50'
+                      }`}
+                    >
+                      💼 Vendedor / Operador
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={registerLoading}
+                  className="mt-2 w-full py-2.5 bg-[#5b8af9] hover:bg-[#5b8af9]/90 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all cursor-pointer border-0 flex items-center justify-center gap-2"
+                >
+                  {registerLoading ? (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : 'Registrar Colaborador'}
+                </button>
+              </form>
+            ) : (
+              /* Pantalla de éxito con credenciales */
+              <div className="p-5 flex flex-col gap-4">
+                <div className="flex flex-col items-center gap-2 text-center py-2">
+                  <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400 flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-[#6b6b8a]">
+                    Se ha enviado un correo de bienvenida automático al colaborador con sus accesos.
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl p-4 flex flex-col gap-3">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">Código de Empresa (Slug)</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-[#e8e8f4] font-mono mt-0.5">{createdCredentials.slug}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">Usuario / Correo</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-[#e8e8f4] font-mono mt-0.5">{createdCredentials.email}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">Contraseña Temporal</div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="text-sm font-bold text-green-600 dark:text-green-400 font-mono">{createdCredentials.tempPassword}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(createdCredentials.tempPassword);
+                        }}
+                        className="px-2 py-1 bg-slate-200 dark:bg-[#252540] hover:bg-slate-300 dark:hover:bg-[#252540]/80 rounded text-[10px] font-bold text-slate-700 dark:text-[#e8e8f4] border-0 cursor-pointer transition-all"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={closeRegisterModal}
+                  className="w-full py-2.5 bg-[#5b8af9] hover:bg-[#5b8af9]/90 text-white font-bold text-sm rounded-xl transition-all cursor-pointer border-0"
+                >
+                  Entendido
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
