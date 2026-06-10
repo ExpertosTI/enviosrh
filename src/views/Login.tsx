@@ -49,7 +49,8 @@ export function Login() {
             <IconPackage size={28} color="#5b8af9" />
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-bold text-[#e8e8f4] tracking-tight">EnvíosRH</h1>
+            <h1 className="text-xl font-bold text-[#e8e8f4] tracking-tight">Envíos App</h1>
+            <p className="text-[10px] text-[#5b8af9] font-bold uppercase tracking-wider mt-0.5">by Renace.tech</p>
             <p className="text-xs text-[#6b6b8a] mt-0.5">Plataforma de gestión de envíos</p>
           </div>
         </div>

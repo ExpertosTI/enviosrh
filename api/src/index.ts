@@ -37,8 +37,8 @@ async function bootstrapAdmin() {
   // Asegurar que existe inquilino por defecto
   await sql`
     INSERT INTO tenants (id, name, slug, primary_color, secondary_color, accent_color, theme_mode)
-    VALUES ('d0000000-0000-0000-0000-000000000000', 'EnvíosRH', 'enviosrh', '#5b8af9', '#4f46e5', '#f59e0b', 'light')
-    ON CONFLICT (slug) DO NOTHING
+    VALUES ('d0000000-0000-0000-0000-000000000000', 'Envíos App', 'enviosrh', '#5b8af9', '#4f46e5', '#f59e0b', 'light')
+    ON CONFLICT (slug) DO UPDATE SET name = 'Envíos App' WHERE tenants.name = 'EnvíosRH'
   `;
 
   if (adminEmail && adminPassword) {

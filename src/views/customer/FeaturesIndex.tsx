@@ -54,8 +54,8 @@ export function FeaturesIndex() {
             <IconPackage size={20} color="#5b8af9" />
           </div>
           <div>
-            <h1 className="font-extrabold text-base tracking-tight text-white leading-none">EnvíosRH</h1>
-            <span className="text-[10px] text-[#6b6b8a] uppercase font-bold tracking-wider">Index de Funcionalidades</span>
+            <h1 className="font-extrabold text-base tracking-tight text-white leading-none">Envíos App</h1>
+            <span className="text-[10px] text-[#5b8af9] uppercase font-bold tracking-wider">by Renace.tech</span>
           </div>
         </div>
         <ThemeToggle />
@@ -102,7 +102,7 @@ export function FeaturesIndex() {
       {/* Footer */}
       <footer className="mt-auto py-6 border-t border-[#252540] bg-[#13131f] text-center">
         <p className="text-[10px] text-[#6b6b8a] font-medium">
-          © {new Date().getFullYear()} EnvíosRH. Desplegado y sincronizado en <span className="text-[#5b8af9]">renace.tech/enviosapp</span>.
+          © {new Date().getFullYear()} <span className="text-white font-bold">Envíos App</span> <span className="text-[#5b8af9]">by Renace.tech</span>. Desplegado en <span className="text-[#5b8af9]">enviosrh.renace.tech</span>.
         </p>
       </footer>
     </div>

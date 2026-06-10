@@ -535,7 +535,7 @@ export function CustomerTracking() {
               </div>
             )}
             <span className="font-bold text-sm text-slate-800 dark:text-[#e8e8f4]">
-              {delivery?.tenant?.name ?? 'EnvíosRH'}
+              {delivery?.tenant?.name ?? 'Envíos App'}
             </span>
           </div>
           <ThemeToggle />
@@ -621,7 +621,7 @@ export function CustomerTracking() {
         </main>
 
         <footer className="py-4 text-center text-[10px] text-slate-400 dark:text-[#6b6b8a] transition-colors duration-200">
-          EnvíosRH © 2026 • Logística y Despacho
+          Envíos App by Renace.tech © 2026 • Logística y Despacho
         </footer>
       </div>
     );

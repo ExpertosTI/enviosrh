@@ -239,7 +239,7 @@ export function MessengerPortal() {
           const watcherId = await BackgroundGeolocation.addWatcher(
             {
               backgroundMessage: "Transmitiendo tu ubicación en tiempo real...",
-              backgroundTitle: "EnvíosRH activo",
+              backgroundTitle: "Envíos App activo",
               requestPermissions: true,
               stale: false,
               distanceFilter: 2 // Reportar cada 2 metros de movimiento
@@ -701,7 +701,7 @@ export function MessengerPortal() {
               <IconPackage size={16} className="text-primary" />
             </div>
           )}
-          <span className="font-bold text-sm text-[#e8e8f4]">{delivery?.tenant?.name ?? 'EnvíosRH'}</span>
+          <span className="font-bold text-sm text-[#e8e8f4]">{delivery?.tenant?.name ?? 'Envíos App'}</span>
         </div>
 
         <div className="flex items-center gap-2">

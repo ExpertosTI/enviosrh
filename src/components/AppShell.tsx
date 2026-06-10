@@ -129,7 +129,10 @@ export function AppShell({ children, nav }: AppShellProps) {
           <div className="w-8 h-8 rounded-lg bg-[#5b8af9]/20 flex items-center justify-center">
             <IconPackage size={18} color="#5b8af9" />
           </div>
-          <span className="font-bold text-base text-[#e8e8f4] tracking-tight">EnvíosRH</span>
+          <div className="flex-1 min-w-0">
+            <span className="font-bold text-sm text-[#e8e8f4] tracking-tight block leading-none">Envíos App</span>
+            <span className="text-[9px] text-[#5b8af9] font-bold uppercase tracking-wider">by Renace.tech</span>
+          </div>
         </div>
 
         {/* Nav items */}
@@ -186,7 +189,10 @@ export function AppShell({ children, nav }: AppShellProps) {
           <div className="w-7 h-7 rounded-lg bg-[#5b8af9]/20 flex items-center justify-center">
             <IconPackage size={16} color="#5b8af9" />
           </div>
-          <span className="font-bold text-sm text-[#e8e8f4] flex-1">EnvíosRH</span>
+          <div className="flex-1 flex flex-col leading-none">
+            <span className="font-bold text-sm text-[#e8e8f4]">Envíos App</span>
+            <span className="text-[9px] text-[#5b8af9] font-bold uppercase tracking-wider">by Renace.tech</span>
+          </div>
           <button
             onClick={() => setShowProfileModal(true)}
             className="flex items-center gap-1.5 bg-[#252540]/60 hover:bg-[#252540] px-2 py-1 rounded-lg transition-colors border-0 cursor-pointer text-[#e8e8f4]"

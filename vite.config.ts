@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Envíos RH',
-        short_name: 'EnvíosRH',
-        description: 'Gestión de envíos y mensajeros',
+        name: 'Envíos App by Renace.tech',
+        short_name: 'EnvíosApp',
+        description: 'Gestión de envíos, mensajeros y rastreo en tiempo real',
         theme_color: '#1a1a2e',
         background_color: '#1a1a2e',
         display: 'standalone',
