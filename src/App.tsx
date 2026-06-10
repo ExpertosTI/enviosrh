@@ -14,6 +14,7 @@ import { MessengerDelivery } from './views/messenger/Delivery';
 import { CustomerTracking } from './views/customer/Tracking';
 import { MessengerPortal } from './views/messenger/MessengerPortal';
 import { FeaturesIndex } from './views/customer/FeaturesIndex';
+import { NotFound } from './views/NotFound';
 
 function RequireAuth({ children, role }: { children: React.ReactNode; role?: string }) {
   const user = getSession();
@@ -73,8 +74,8 @@ export default function App() {
         <RequireAuth role="messenger"><MessengerDelivery /></RequireAuth>
       } />
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* Fallback → 404 */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
