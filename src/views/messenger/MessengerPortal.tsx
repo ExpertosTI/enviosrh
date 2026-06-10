@@ -92,25 +92,43 @@ export function MessengerPortal() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMsg, setNewMsg] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const lastSeenIdRef = useRef<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const loadMessages = useCallback(async () => {
-    if (!token || !showChat) return;
+  const loadMessages = useCallback(async (fromBackground = false) => {
+    if (!token) return;
+    if (!showChat && !fromBackground) return;
     try {
       const msgs = await publicApi.get<ChatMessage[]>(`/p/m/${token}/chat`);
       setMessages(msgs);
+      if (!showChat) {
+        // Contar mensajes del cliente no vistos
+        const lastSeen = lastSeenIdRef.current;
+        const customerMsgs = msgs.filter(m => m.sender === 'customer');
+        if (!lastSeen) {
+          setUnreadCount(customerMsgs.length);
+        } else {
+          const lastSeenIdx = msgs.findIndex(m => m.id === lastSeen);
+          const newCustomer = msgs.slice(lastSeenIdx + 1).filter(m => m.sender === 'customer');
+          setUnreadCount(newCustomer.length);
+        }
+      } else {
+        // Chat abierto: marcar todo como leído
+        if (msgs.length > 0) lastSeenIdRef.current = msgs[msgs.length - 1].id;
+        setUnreadCount(0);
+      }
     } catch (e) {
       console.warn('Error loading chat messages:', e);
     }
   }, [token, showChat]);
 
-  // Polling del chat
+  // Polling activo cuando chat abierto (3s), background cuando cerrado (10s)
   useEffect(() => {
-    if (!showChat) return;
-    loadMessages();
+    loadMessages(true);
     const interval = setInterval(() => {
-      loadMessages();
-    }, 3000);
+      loadMessages(true);
+    }, showChat ? 3000 : 10000);
     return () => clearInterval(interval);
   }, [showChat, loadMessages]);
 
@@ -121,6 +139,13 @@ export function MessengerPortal() {
     }
   }, [messages, showChat]);
 
+  // Al abrir chat, marcar como leídos
+  const handleOpenChat = () => {
+    setShowChat(true);
+    setUnreadCount(0);
+    if (messages.length > 0) lastSeenIdRef.current = messages[messages.length - 1].id;
+  };
+
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
     if (!token || !newMsg.trim() || sendingMsg) return;
@@ -129,6 +154,7 @@ export function MessengerPortal() {
       const sent = await publicApi.post<ChatMessage>(`/p/m/${token}/chat`, { message: newMsg });
       setMessages((prev) => [...prev, sent]);
       setNewMsg('');
+      lastSeenIdRef.current = sent.id;
     } catch (err) {
       console.error('Error sending message:', err);
     } finally {
@@ -654,10 +680,15 @@ export function MessengerPortal() {
           {/* Chat con Cliente */}
           {delivery && (
             <button
-              onClick={() => setShowChat(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#5b8af9]/15 text-[#5b8af9] border border-[#5b8af9]/25 cursor-pointer text-[10px] font-bold hover:bg-[#5b8af9]/25 transition-all"
+              onClick={handleOpenChat}
+              className="relative flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#5b8af9]/15 text-[#5b8af9] border border-[#5b8af9]/25 cursor-pointer text-[10px] font-bold hover:bg-[#5b8af9]/25 transition-all"
             >
               <IconMessage size={13} /> Chat
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center px-1 animate-bounce shadow-lg">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
           )}
 

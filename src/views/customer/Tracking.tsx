@@ -170,25 +170,41 @@ export function CustomerTracking() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMsg, setNewMsg] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const lastSeenIdRef = useRef<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const loadMessages = useCallback(async () => {
-    if (!token || !showChat) return;
+  const loadMessages = useCallback(async (fromBackground = false) => {
+    if (!token) return;
+    if (!showChat && !fromBackground) return;
     try {
       const msgs = await publicApi.get<ChatMessage[]>(`/p/c/${token}/chat`);
       setMessages(msgs);
+      if (!showChat) {
+        const lastSeen = lastSeenIdRef.current;
+        const messengerMsgs = msgs.filter(m => m.sender === 'messenger');
+        if (!lastSeen) {
+          setUnreadCount(messengerMsgs.length);
+        } else {
+          const lastSeenIdx = msgs.findIndex(m => m.id === lastSeen);
+          const newMsgs = msgs.slice(lastSeenIdx + 1).filter(m => m.sender === 'messenger');
+          setUnreadCount(newMsgs.length);
+        }
+      } else {
+        if (msgs.length > 0) lastSeenIdRef.current = msgs[msgs.length - 1].id;
+        setUnreadCount(0);
+      }
     } catch (e) {
       console.warn('Error loading chat messages:', e);
     }
   }, [token, showChat]);
 
-  // Cargar mensajes al abrir el chat y en polling
+  // Polling: activo (3s) si chat abierto, background (10s) si cerrado
   useEffect(() => {
-    if (!showChat) return;
-    loadMessages();
+    loadMessages(true);
     const interval = setInterval(() => {
-      loadMessages();
-    }, 3000);
+      loadMessages(true);
+    }, showChat ? 3000 : 10000);
     return () => clearInterval(interval);
   }, [showChat, loadMessages]);
 
@@ -199,6 +215,12 @@ export function CustomerTracking() {
     }
   }, [messages, showChat]);
 
+  const handleOpenChat = () => {
+    setShowChat(true);
+    setUnreadCount(0);
+    if (messages.length > 0) lastSeenIdRef.current = messages[messages.length - 1].id;
+  };
+
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
     if (!token || !newMsg.trim() || sendingMsg) return;
@@ -207,6 +229,7 @@ export function CustomerTracking() {
       const sent = await publicApi.post<ChatMessage>(`/p/c/${token}/chat`, { message: newMsg });
       setMessages((prev) => [...prev, sent]);
       setNewMsg('');
+      lastSeenIdRef.current = sent.id;
     } catch (err) {
       console.error('Error sending message:', err);
     } finally {
@@ -721,10 +744,15 @@ export function CustomerTracking() {
                 {delivery.messenger_phone && (
                   <div className="flex gap-1.5 shrink-0">
                     <button
-                      onClick={() => setShowChat(true)}
-                      className="px-3 py-1.5 rounded-lg bg-[#5b8af9]/15 text-[#5b8af9] text-xs font-bold hover:bg-[#5b8af9]/25 transition-colors border-0 cursor-pointer flex items-center gap-1"
+                      onClick={handleOpenChat}
+                      className="relative px-3 py-1.5 rounded-lg bg-[#5b8af9]/15 text-[#5b8af9] text-xs font-bold hover:bg-[#5b8af9]/25 transition-colors border-0 cursor-pointer flex items-center gap-1"
                     >
                       <IconMessage size={13} /> Chat
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center px-1 animate-bounce shadow-lg">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
                     </button>
                     <a href={`tel:${delivery.messenger_phone}`} className="px-3 py-1.5 rounded-lg bg-[#5b8af9] text-white text-xs font-bold hover:bg-[#3a68e0] transition-colors decoration-none flex items-center">
                       Llamar
