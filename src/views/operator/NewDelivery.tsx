@@ -7,8 +7,8 @@ import { IconMotorbike, IconPackage, IconUser, IconMap } from '../../components/
 import L from 'leaflet';
 
 // Ubicación de partida de la empresa (Centro de Despacho RH)
-const COMPANY_LAT = 18.4776;
-const COMPANY_LNG = -69.9011;
+const COMPANY_LAT = 18.5201702;
+const COMPANY_LNG = -70.0261773;
 
 interface Form {
   customer_name: string;
@@ -24,13 +24,14 @@ interface Form {
   products: string;
   scheduled_date: string;
   scheduled_time: string;
+  area_zone: string;
 }
 
 const EMPTY: Form = {
   customer_name: '', customer_phone: '', customer_email: '', customer_address: '',
   customer_reference: '', location_link: '', delivery_fee: '',
   notes: '', messenger_id: '', total_amount: '', products: '',
-  scheduled_date: '', scheduled_time: '',
+  scheduled_date: '', scheduled_time: '', area_zone: '',
 };
 
 /** Extrae lat/lng de la mayor cantidad de formatos de URL/texto posible */
@@ -217,6 +218,7 @@ export function NewDelivery() {
                 customer_email: res.customer.email || '',
                 customer_address: res.customer.address || '',
                 customer_reference: res.customer.reference || '',
+                area_zone: res.customer.area_zone || '',
               }));
               setCustomerMessage({ type: 'success', text: `✨ Cliente encontrado: ${res.customer.name}` });
               setCustomerSaved(true);
@@ -397,6 +399,7 @@ export function NewDelivery() {
         email: form.customer_email || undefined,
         address: form.customer_address || undefined,
         reference: form.customer_reference || undefined,
+        area_zone: form.area_zone || undefined,
       });
       setCustomerSaved(true);
       setCustomerMessage({ type: 'success', text: '✅ Cliente guardado correctamente.' });
@@ -422,6 +425,7 @@ export function NewDelivery() {
           email: form.customer_email || undefined,
           address: form.customer_address || undefined,
           reference: form.customer_reference || undefined,
+          area_zone: form.area_zone || undefined,
         },
         location_link: form.location_link || undefined,
         delivery_fee: form.delivery_fee ? Number(form.delivery_fee) : 0,
@@ -430,6 +434,7 @@ export function NewDelivery() {
         total_amount: form.total_amount ? Number(form.total_amount) : 0,
         products: form.products || undefined,
         scheduled_at: scheduledAt ?? null,
+        area_zone: form.area_zone || undefined,
       };
       const { id } = await api.post<{ id: string }>('/deliveries', body);
       nav(`/operador/envio/${id}/compartir`);
@@ -440,7 +445,7 @@ export function NewDelivery() {
     }
   }
 
-  const inputCls = 'w-full bg-[#0d0d1a] border border-[#252540] rounded-xl px-4 py-3 text-[#e8e8f4] text-sm outline-none transition-all placeholder:text-[#3a3a58] focus:border-[#5b8af9] focus:ring-2 focus:ring-[#5b8af9]/20 hover:border-[#3a3a58]';
+  const inputCls = 'input';
 
   return (
     <AppShell>
@@ -504,6 +509,11 @@ export function NewDelivery() {
             <Field label="Dirección" icon={<AddressIcon />}>
               <input className={inputCls} value={form.customer_address}
                 onChange={(e) => set('customer_address', e.target.value)} placeholder="Calle, número, sector" />
+            </Field>
+
+            <Field label="Área / Zona" icon={<AddressIcon />}>
+              <input className={inputCls} value={form.area_zone}
+                onChange={(e) => set('area_zone', e.target.value)} placeholder="Ej: Bella Vista, Naco, etc." />
             </Field>
 
             <Field label="Referencia" icon={<RefIcon />} className="md:col-span-2">

@@ -49,23 +49,97 @@ export function MessengerDashboard() {
     return () => clearInterval(interval);
   }, [loadDeliveries]);
 
-  const active   = deliveries.filter((d) => d.state === 'in_transit');
-  const assigned = deliveries.filter((d) => d.state === 'assigned');
-  const rest     = deliveries.filter((d) => !['in_transit', 'assigned'].includes(d.state));
+  const [filterMode, setFilterMode] = useState<'today' | 'all'>('today');
+
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23,59,59,999);
+
+  // Filtrar envíos según modo
+  const filteredDeliveries = deliveries.filter((d) => {
+    if (filterMode === 'today') {
+      const dDate = new Date(d.created_at);
+      return dDate >= todayStart && dDate <= todayEnd;
+    }
+    return true;
+  });
+
+  // KPIs de hoy (siempre sobre envíos de hoy)
+  const todayDeliveries = deliveries.filter((d) => {
+    const dDate = new Date(d.created_at);
+    return dDate >= todayStart && dDate <= todayEnd;
+  });
+  const todayCompleted = todayDeliveries.filter((d) => d.state === 'delivered');
+  const todayEarnings = todayCompleted.reduce((acc, d) => acc + Number(d.delivery_fee || 0), 0);
+
+  // Estimación de km recorridos hoy basándose en coordenadas de entrega
+  const todayKm = todayCompleted.reduce((acc, d) => {
+    if (!d.location_link) return acc + 6.5; // Estimación base si no hay link
+    const match = d.location_link.match(/([-\d.]+),\s*([-\d.]+)/) || d.location_link.match(/query=([-\d.]+),([-\d.]+)/) || d.location_link.match(/@([-\d.]+),([-\d.]+)/);
+    if (!match) return acc + 6.5;
+    const lat = parseFloat(match[1]);
+    const lng = parseFloat(match[2]);
+    // Haversine a base Richard Hookah SRL: 18.5201702, -70.0261773
+    const R = 6371;
+    const dLat = (lat - 18.5201702) * Math.PI / 180;
+    const dLng = (lng - (-70.0261773)) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(18.5201702*Math.PI/180) * Math.cos(lat*Math.PI/180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const dKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return acc + dKm;
+  }, 0);
+
+  const active   = filteredDeliveries.filter((d) => d.state === 'in_transit');
+  const assigned = filteredDeliveries.filter((d) => d.state === 'assigned');
+  const rest     = filteredDeliveries.filter((d) => !['in_transit', 'assigned'].includes(d.state));
 
   return (
     <AppShell>
-      <PageHeader title="Mis envíos" />
-      <div className="p-4 md:p-6 flex flex-col gap-5">
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-4">
-            <div className="text-2xl font-bold text-[#f59e0b]">{active.length}</div>
-            <div className="text-xs text-[#6b6b8a] mt-0.5">En camino</div>
+      <PageHeader
+        title="Mis envíos"
+        actions={
+          <div className="flex bg-[#13131f] border border-[#252540] rounded-xl p-0.5">
+            <button
+              onClick={() => setFilterMode('today')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border-0 cursor-pointer ${
+                filterMode === 'today' ? 'bg-[#5b8af9] text-white' : 'text-[#6b6b8a] hover:text-[#e8e8f4]'
+              }`}
+            >
+              Hoy
+            </button>
+            <button
+              onClick={() => setFilterMode('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border-0 cursor-pointer ${
+                filterMode === 'all' ? 'bg-[#5b8af9] text-white' : 'text-[#6b6b8a] hover:text-[#e8e8f4]'
+              }`}
+            >
+              Todos
+            </button>
           </div>
-          <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-4">
-            <div className="text-2xl font-bold text-[#7caeff]">{assigned.length}</div>
-            <div className="text-xs text-[#6b6b8a] mt-0.5">Por entregar</div>
+        }
+      />
+      <div className="p-4 md:p-6 flex flex-col gap-5">
+        {/* Stats / KPIs */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-3 text-center">
+            <div className="text-[9px] font-bold text-[#6b6b8a] uppercase tracking-wider mb-1">Completados</div>
+            <div className="text-xl font-black text-green-400">
+              {todayCompleted.length}<span className="text-xs text-[#6b6b8a] font-normal">/{todayDeliveries.length}</span>
+            </div>
+          </div>
+          <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-3 text-center">
+            <div className="text-[9px] font-bold text-[#6b6b8a] uppercase tracking-wider mb-1">Ingresos de Hoy</div>
+            <div className="text-xl font-black text-[#5b8af9] truncate">
+              <span className="text-xs font-semibold mr-0.5">RD$</span>{todayEarnings.toFixed(0)}
+            </div>
+          </div>
+          <div className="bg-[#16162a] border border-[#252540] rounded-[14px] p-3 text-center">
+            <div className="text-[9px] font-bold text-[#6b6b8a] uppercase tracking-wider mb-1">Distancia Est.</div>
+            <div className="text-xl font-black text-[#f59e0b]">
+              {todayKm.toFixed(1)}<span className="text-xs font-semibold ml-0.5">km</span>
+            </div>
           </div>
         </div>
 
@@ -160,12 +234,12 @@ export function MessengerDashboard() {
           </section>
         )}
 
-        {!loading && deliveries.length === 0 && !error && (
+        {!loading && filteredDeliveries.length === 0 && !error && (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <div className="w-12 h-12 rounded-2xl bg-[#13131f] flex items-center justify-center">
               <IconPackage size={24} color="#6b6b8a" />
             </div>
-            <p className="text-sm text-[#6b6b8a]">No tienes envíos asignados</p>
+            <p className="text-sm text-[#6b6b8a]">No tienes envíos {filterMode === 'today' ? 'para hoy' : ''}</p>
           </div>
         )}
       </div>

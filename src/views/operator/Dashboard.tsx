@@ -264,7 +264,7 @@ export function OperatorDashboard() {
       />
 
       {/* ── KPI Bar ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-[#0d0d1a] border-b border-[#252540] overflow-x-auto shrink-0">
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-[#0b0b14] border-b border-[#252540] overflow-x-auto shrink-0">
         {/* Filtro de fecha */}
         <div className="flex items-center gap-1.5 shrink-0">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b6b8a" strokeWidth="2">

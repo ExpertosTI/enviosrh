@@ -26,6 +26,7 @@ export interface Customer {
   address?: string;
   reference?: string;
   notes?: string;
+  area_zone?: string;
 }
 
 export interface Delivery {
@@ -55,6 +56,7 @@ export interface Delivery {
   messenger_location_updated_at?: string | null;
   total_amount?: number;
   products?: string | null;
+  area_zone?: string | null;
 }
 
 export type DeliveryState = 'draft' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled';

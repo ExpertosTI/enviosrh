@@ -22,7 +22,7 @@ deliveries.get('/', auth, async (c) => {
       d.messenger_note, d.notes,
       d.external_ref, d.external_source,
       d.customer_confirmed, d.rating,
-      d.total_amount, d.products,
+      d.total_amount, d.products, d.area_zone,
       c.id    AS customer_id,
       c.name  AS customer_name,
       c.phone AS customer_phone,
@@ -54,7 +54,7 @@ deliveries.get('/customer-by-phone/:phone', auth, operatorOnly, async (c) => {
   const { phone } = c.req.param();
 
   const [customer] = await sql`
-    SELECT id, name, phone, email, address, reference, notes
+    SELECT id, name, phone, email, address, reference, notes, area_zone
     FROM customers
     WHERE phone = ${phone.trim()} AND tenant_id = ${user.tenant_id}
     LIMIT 1
@@ -118,8 +118,8 @@ deliveries.get('/resolve-maps-url', auth, async (c) => {
 // ── Guardar / actualizar cliente sin crear envío ─────────────
 deliveries.post('/save-customer', auth, operatorOnly, async (c) => {
   const user = c.get('user');
-  const { name, phone, email, address, reference } = await c.req.json<{
-    name?: string; phone: string; email?: string; address?: string; reference?: string;
+  const { name, phone, email, address, reference, area_zone } = await c.req.json<{
+    name?: string; phone: string; email?: string; address?: string; reference?: string; area_zone?: string;
   }>();
 
   if (!phone?.trim()) return c.json({ error: 'Teléfono requerido' }, 400);
@@ -134,15 +134,16 @@ deliveries.post('/save-customer', auth, operatorOnly, async (c) => {
         name      = COALESCE(${name ?? null}, name),
         email     = COALESCE(${email ?? null}, email),
         address   = COALESCE(${address ?? null}, address),
-        reference = COALESCE(${reference ?? null}, reference)
+        reference = COALESCE(${reference ?? null}, reference),
+        area_zone = COALESCE(${area_zone ?? null}, area_zone)
       WHERE id = ${existing.id}
     `;
     return c.json({ ok: true, updated: true, id: existing.id });
   }
 
   const [created] = await sql`
-    INSERT INTO customers (name, phone, email, address, reference, tenant_id)
-    VALUES (${name ?? ''}, ${phone.trim()}, ${email ?? null}, ${address ?? null}, ${reference ?? null}, ${user.tenant_id})
+    INSERT INTO customers (name, phone, email, address, reference, area_zone, tenant_id)
+    VALUES (${name ?? ''}, ${phone.trim()}, ${email ?? null}, ${address ?? null}, ${reference ?? null}, ${area_zone ?? null}, ${user.tenant_id})
     RETURNING id
   `;
   return c.json({ ok: true, updated: false, id: created.id });
@@ -152,7 +153,7 @@ deliveries.post('/save-customer', auth, operatorOnly, async (c) => {
 deliveries.post('/', auth, operatorOnly, async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{
-    customer: { name: string; phone: string; email?: string; address?: string; reference?: string; notes?: string };
+    customer: { name: string; phone: string; email?: string; address?: string; reference?: string; notes?: string; area_zone?: string };
     location_link?: string;
     delivery_fee?: number;
     messenger_id?: string;
@@ -162,9 +163,10 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     total_amount?: number;
     products?: string;
     scheduled_at?: string | null;
+    area_zone?: string;
   }>();
 
-  const { customer, location_link, delivery_fee = 0, messenger_id, notes, external_ref, external_source, total_amount = 0, products, scheduled_at } = body;
+  const { customer, location_link, delivery_fee = 0, messenger_id, notes, external_ref, external_source, total_amount = 0, products, scheduled_at, area_zone } = body;
 
   if (!customer?.name || !customer?.phone) {
     return c.json({ error: 'Nombre y teléfono del cliente requeridos' }, 400);
@@ -182,14 +184,15 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     await sql.begin(async (tx) => {
       // Upsert cliente por teléfono Y tenant_id
       const [cResult] = await tx`
-        INSERT INTO customers (tenant_id, name, phone, address, reference, notes, email)
-        VALUES (${user.tenant_id}, ${customer.name}, ${customer.phone}, ${customer.address ?? null}, ${customer.reference ?? null}, ${customer.notes ?? null}, ${customer.email ?? null})
+        INSERT INTO customers (tenant_id, name, phone, address, reference, notes, email, area_zone)
+        VALUES (${user.tenant_id}, ${customer.name}, ${customer.phone}, ${customer.address ?? null}, ${customer.reference ?? null}, ${customer.notes ?? null}, ${customer.email ?? null}, ${area_zone ?? customer.area_zone ?? null})
         ON CONFLICT (tenant_id, phone) DO UPDATE
           SET name      = EXCLUDED.name,
               address   = COALESCE(EXCLUDED.address, customers.address),
               reference = COALESCE(EXCLUDED.reference, customers.reference),
-              email     = COALESCE(EXCLUDED.email, customers.email)
-        RETURNING id, name, phone, address, reference, email
+              email     = COALESCE(EXCLUDED.email, customers.email),
+              area_zone = COALESCE(EXCLUDED.area_zone, customers.area_zone)
+        RETURNING id, name, phone, address, reference, email, area_zone
       `;
       cust = cResult;
 
@@ -198,7 +201,7 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
           tenant_id, customer_id, location_link, delivery_fee,
           messenger_id, state, assigned_at,
           notes, external_ref, external_source, operator_id,
-          total_amount, products, scheduled_at
+          total_amount, products, scheduled_at, area_zone
         ) VALUES (
           ${user.tenant_id},
           ${cust.id},
@@ -213,7 +216,8 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
           ${user.sub},
           ${total_amount},
           ${products ?? null},
-          ${scheduled_at ?? null}
+          ${scheduled_at ?? null},
+          ${area_zone ?? customer.area_zone ?? null}
         )
         RETURNING *
       `;
@@ -272,7 +276,7 @@ deliveries.get('/my-deliveries', auth, async (c) => {
     SELECT 
       d.id, d.state, d.delivery_fee, d.location_link, d.address_override,
       d.assigned_at, d.delivered_at, d.created_at, d.notes,
-      d.proof_img, d.proof_signature, d.total_amount, d.products,
+      d.proof_img, d.proof_signature, d.total_amount, d.products, d.area_zone,
       c.name AS customer_name, c.phone AS customer_phone,
       c.address AS customer_address, c.reference AS customer_reference,
       u.name AS messenger_name, u.phone AS messenger_phone,
@@ -303,7 +307,7 @@ deliveries.get('/:id', auth, async (c) => {
       d.messenger_note, d.notes,
       d.external_ref, d.external_source,
       d.customer_confirmed, d.rating,
-      d.total_amount, d.products,
+      d.total_amount, d.products, d.area_zone,
       c.id    AS customer_id,
       c.name  AS customer_name,
       c.phone AS customer_phone,
@@ -375,6 +379,7 @@ deliveries.get('/:id/share', auth, async (c) => {
     whatsapp_messenger: messWa,
     total_amount: Number(row.total_amount || 0),
     products: row.products ?? null,
+    area_zone: row.area_zone ?? null,
   });
 });
 
