@@ -45,6 +45,7 @@ deliveries.get('/', auth, async (c) => {
     ORDER BY d.created_at DESC
     LIMIT 200
   `;
+  return c.json(rows);
 });
 
 // Buscar cliente por número de teléfono
@@ -64,6 +65,87 @@ deliveries.get('/customer-by-phone/:phone', auth, operatorOnly, async (c) => {
   }
 
   return c.json({ found: true, customer });
+});
+
+// ── Resolver URL corta de Google Maps → coordenadas ──────────
+// Necesario para maps.app.goo.gl, goo.gl/maps, etc. (CORS bloqueado en cliente)
+deliveries.get('/resolve-maps-url', auth, async (c) => {
+  const url = c.req.query('url');
+  if (!url) return c.json({ error: 'URL requerida' }, 400);
+
+  try {
+    // Seguir redirects hasta obtener la URL final con coordenadas
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EnviosApp/1.0)' }
+    });
+
+    const location = response.headers.get('location') ?? '';
+
+    // Intentar extraer coordenadas de la URL final
+    const patterns = [
+      // @lat,lng,zoom
+      /@([-\d.]+),([-\d.]+)/,
+      // ?q=lat,lng
+      /[?&]q=([-\d.]+),([-\d.]+)/,
+      // /place/.../lat,lng
+      /\/([-\d.]+),([-\d.]+)/,
+      // ll=lat,lng
+      /ll=([-\d.]+),([-\d.]+)/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = location.match(pattern);
+      if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+          return c.json({ ok: true, lat, lng, resolved_url: location });
+        }
+      }
+    }
+
+    // Si la URL final no tiene coordenadas visibles, devolver la URL resuelta
+    // para que el cliente pueda intentar parsearla
+    return c.json({ ok: false, resolved_url: location || url, message: 'No se pudieron extraer coordenadas automáticamente' });
+  } catch (err) {
+    console.error('[resolve-maps-url]', err);
+    return c.json({ ok: false, message: 'No se pudo resolver la URL' }, 200);
+  }
+});
+
+// ── Guardar / actualizar cliente sin crear envío ─────────────
+deliveries.post('/save-customer', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
+  const { name, phone, email, address, reference } = await c.req.json<{
+    name?: string; phone: string; email?: string; address?: string; reference?: string;
+  }>();
+
+  if (!phone?.trim()) return c.json({ error: 'Teléfono requerido' }, 400);
+
+  const [existing] = await sql`
+    SELECT id FROM customers WHERE phone = ${phone.trim()} AND tenant_id = ${user.tenant_id} LIMIT 1
+  `;
+
+  if (existing) {
+    await sql`
+      UPDATE customers SET
+        name      = COALESCE(${name ?? null}, name),
+        email     = COALESCE(${email ?? null}, email),
+        address   = COALESCE(${address ?? null}, address),
+        reference = COALESCE(${reference ?? null}, reference)
+      WHERE id = ${existing.id}
+    `;
+    return c.json({ ok: true, updated: true, id: existing.id });
+  }
+
+  const [created] = await sql`
+    INSERT INTO customers (name, phone, email, address, reference, tenant_id)
+    VALUES (${name ?? ''}, ${phone.trim()}, ${email ?? null}, ${address ?? null}, ${reference ?? null}, ${user.tenant_id})
+    RETURNING id
+  `;
+  return c.json({ ok: true, updated: false, id: created.id });
 });
 
 // ── Crear envío ──────────────────────────────────────────────
