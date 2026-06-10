@@ -378,9 +378,9 @@ export function AdminPanel() {
               {/* Tabs */}
               <div className="flex border-b border-slate-100 dark:border-[#252540] overflow-x-auto">
                 {([
-                  { key: 'messengers', label: 'Mensajeros', count: data.messengers.length },
-                  { key: 'sellers',    label: 'Vendedores', count: data.sellers.length },
-                  { key: 'customers',  label: 'Clientes',   count: data.customers.length },
+                  { key: 'messengers', label: 'Mensajeros', count: data?.messengers?.length ?? 0 },
+                  { key: 'sellers',    label: 'Vendedores', count: data?.sellers?.length ?? 0 },
+                  { key: 'customers',  label: 'Clientes',   count: data?.customers?.length ?? 0 },
                   { key: 'settings',   label: 'Marca y Perfil', count: null },
                 ] as const).map(t => (
                   <button
