@@ -123,13 +123,41 @@ export function MessengerPortal() {
     }
   }, [token, showChat]);
 
-  // Polling activo cuando chat abierto (3s), background cuando cerrado (10s)
+  // Polling: activo (3s) si chat abierto, background (10s) si cerrado.
+  // Se pausa automáticamente cuando el tab no está visible.
   useEffect(() => {
-    loadMessages(true);
-    const interval = setInterval(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (interval) return;
       loadMessages(true);
-    }, showChat ? 3000 : 10000);
-    return () => clearInterval(interval);
+      interval = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          loadMessages(true);
+        }
+      }, showChat ? 3000 : 10000);
+    };
+
+    const stopPolling = () => {
+      if (interval) { clearInterval(interval); interval = null; }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadMessages(true); // carga inmediata al volver
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [showChat, loadMessages]);
 
   // Scroll al final

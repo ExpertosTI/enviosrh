@@ -112,6 +112,32 @@ app.use('*', async (c, next) => {
   })(c, next);
 });
 
+// ── Cache-Control headers ────────────────────────────────────
+// GET /p/c/:token y /p/m/:token → 5s caché (stale-while-revalidate)
+// GET /p/*/chat, POST y mutaciones → siempre no-store
+app.use('*', async (c, next) => {
+  await next();
+  const method = c.req.method;
+  const path   = c.req.path;
+
+  if (method !== 'GET') {
+    // Mutaciones: nunca cachear
+    c.res.headers.set('Cache-Control', 'no-store');
+    return;
+  }
+
+  if (path.match(/^\/p\/(c|m)\/[^/]+$/) ) {
+    // Portal principal del cliente / mensajero: caché 5s con revalidación en background
+    c.res.headers.set('Cache-Control', 'private, max-age=5, stale-while-revalidate=10');
+  } else if (path.startsWith('/p/')) {
+    // Chat y sub-rutas del portal: siempre fresco
+    c.res.headers.set('Cache-Control', 'no-store');
+  } else {
+    // Rutas autenticadas de API: no cachear en cliente
+    c.res.headers.set('Cache-Control', 'no-store');
+  }
+});
+
 // Manejo centralizado de errores (Security: no revelar stack traces en prod)
 app.onError((err, c) => {
   console.error('[enviosrh-api] Unhandled Error:', err);
