@@ -1,6 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from './api';
 import { getSession } from './auth';
+import { registerPlugin } from '@capacitor/core';
+import { Device } from '@capacitor/device';
+
+const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
 
 export type GpsStatus = 'idle' | 'requesting' | 'active' | 'denied' | 'unavailable' | 'error';
 
@@ -22,13 +26,8 @@ export function useGps() {
   return useContext(GpsContext);
 }
 
-/** Intervalo mínimo entre reportes al servidor (ms) */
 const REPORT_THROTTLE_MS = 5000;
 
-/**
- * GpsProvider: inicia watchPosition global cuando el usuario es mensajero con sesión activa.
- * Reporta la posición al endpoint autenticado /users/location con throttle de 5s.
- */
 export function GpsProvider({ children }: { children: ReactNode }) {
   const session = getSession();
   const isMessenger = session?.role === 'messenger';
@@ -36,7 +35,7 @@ export function GpsProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<GpsStatus>('idle');
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
-  const watchIdRef = useRef<number | null>(null);
+  const watchIdRef = useRef<string | number | null>(null);
   const lastReportRef = useRef<number>(0);
   const pendingReportRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -70,10 +69,8 @@ export function GpsProvider({ children }: { children: ReactNode }) {
   const sendLocation = async (lat: number, lng: number, acc: number) => {
     let batteryLevel: number | undefined = undefined;
     try {
-      if ('getBattery' in navigator) {
-        const battery: any = await (navigator as any).getBattery();
-        batteryLevel = Math.round(battery.level * 100);
-      }
+      const info = await Device.getBatteryInfo();
+      batteryLevel = Math.round((info.batteryLevel || 0) * 100);
     } catch {}
 
     const payload = {
@@ -102,23 +99,56 @@ export function GpsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Escuchar evento online para sincronizar cola
-  useEffect(() => {
-    const handleOnline = () => {
-      syncQueue();
-    };
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, []);
+  const startWatch = async () => {
+    const isCapacitor = (window as any).Capacitor !== undefined;
 
-  const startWatch = () => {
+    if (watchIdRef.current !== null) return;
+    setStatus('requesting');
+
+    if (isCapacitor) {
+      try {
+        const watcherId = await BackgroundGeolocation.addWatcher(
+          {
+            backgroundMessage: "Transmitiendo tu ubicación en tiempo real...",
+            backgroundTitle: "Envíos App activo",
+            requestPermissions: true,
+            stale: false,
+            distanceFilter: 5
+          },
+          (location: any, error: any) => {
+            if (error) {
+              console.error("Native GPS error:", error);
+              setStatus('error');
+              return;
+            }
+            if (location) {
+              const newCoords: [number, number] = [location.latitude, location.longitude];
+              setCoords(newCoords);
+              setAccuracy(location.accuracy || 10);
+              setStatus('active');
+
+              const now = Date.now();
+              if (now - lastReportRef.current >= REPORT_THROTTLE_MS) {
+                lastReportRef.current = now;
+                sendLocation(newCoords[0], newCoords[1], location.accuracy || 10);
+              }
+            }
+          }
+        );
+        watchIdRef.current = watcherId;
+      } catch (err) {
+        console.error("Native GPS start failed:", err);
+        setStatus('error');
+      }
+      return;
+    }
+
+    // Web Fallback
     if (!navigator.geolocation) {
       setStatus('unavailable');
       return;
     }
-    if (watchIdRef.current !== null) return; // ya corriendo
 
-    setStatus('requesting');
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const newCoords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
@@ -126,27 +156,15 @@ export function GpsProvider({ children }: { children: ReactNode }) {
         setAccuracy(pos.coords.accuracy);
         setStatus('active');
 
-        // Throttle reportes al servidor
         const now = Date.now();
         if (now - lastReportRef.current >= REPORT_THROTTLE_MS) {
           lastReportRef.current = now;
           sendLocation(newCoords[0], newCoords[1], pos.coords.accuracy);
-        } else if (!pendingReportRef.current) {
-          const delay = REPORT_THROTTLE_MS - (now - lastReportRef.current);
-          pendingReportRef.current = setTimeout(() => {
-            lastReportRef.current = Date.now();
-            pendingReportRef.current = null;
-            sendLocation(newCoords[0], newCoords[1], pos.coords.accuracy);
-          }, delay);
         }
       },
       (err) => {
-        console.warn('[GPS] Error:', err.code, err.message);
-        if (err.code === err.PERMISSION_DENIED) {
-          setStatus('denied');
-        } else {
-          setStatus('unavailable');
-        }
+        if (err.code === err.PERMISSION_DENIED) setStatus('denied');
+        else setStatus('unavailable');
         watchIdRef.current = null;
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -154,8 +172,13 @@ export function GpsProvider({ children }: { children: ReactNode }) {
   };
 
   const stopWatch = () => {
+    const isCapacitor = (window as any).Capacitor !== undefined;
     if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
+      if (isCapacitor) {
+        BackgroundGeolocation.removeWatcher({ id: watchIdRef.current }).catch(console.error);
+      } else {
+        navigator.geolocation.clearWatch(watchIdRef.current as number);
+      }
       watchIdRef.current = null;
     }
     if (pendingReportRef.current) {
@@ -164,45 +187,14 @@ export function GpsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Iniciar GPS automáticamente si es mensajero con sesión
   useEffect(() => {
     if (!isMessenger) return;
-    // Verificar permiso actual antes de pedir
-    if ('permissions' in navigator) {
-      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-        if (result.state === 'granted') {
-          startWatch();
-        } else if (result.state === 'prompt') {
-          setStatus('idle'); // esperará que el componente lo solicite
-        } else {
-          setStatus('denied');
-        }
-        result.onchange = () => {
-          if (result.state === 'granted') {
-            startWatch();
-          } else if (result.state === 'denied') {
-            setStatus('denied');
-            stopWatch();
-          }
-        };
-      });
-    } else {
-      // fallback: intenta directamente
-      startWatch();
-    }
-
-    return () => {
-      stopWatch();
-    };
+    startWatch();
+    return () => stopWatch();
   }, [isMessenger]);
 
-  const requestGps = () => {
-    if (watchIdRef.current !== null) return;
-    startWatch();
-  };
-
   return (
-    <GpsContext.Provider value={{ status, coords, requestGps, accuracy }}>
+    <GpsContext.Provider value={{ status, coords, requestGps: startWatch, accuracy }}>
       {children}
     </GpsContext.Provider>
   );

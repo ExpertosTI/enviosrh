@@ -64,7 +64,7 @@ export function Register() {
     }
   };
 
-  const inputCls = 'w-full bg-[#0b0b14] border border-[#252540] rounded-xl px-4 py-3 text-[#e8e8f4] text-sm outline-none transition-all placeholder:text-[#3a3a58] focus:border-[#5b8af9] focus:ring-1 focus:ring-[#5b8af9]/30';
+  const inputCls = 'w-full bg-[#1a1a2e] border border-[#252540] rounded-xl px-4 py-3.5 text-[#e8e8f4] text-sm outline-none transition-all placeholder:text-[#4a4a6a] focus:border-[#5b8af9] focus:ring-1 focus:ring-[#5b8af9]/30';
 
   return (
     <div className="min-h-screen bg-[#0b0b14] flex items-center justify-center px-4 py-12">
@@ -80,36 +80,35 @@ export function Register() {
 
       <div className="relative w-full max-w-sm">
         {/* Logo */}
-        <div className="flex flex-col items-center mb-6 gap-3">
-          <div className="w-14 h-14 rounded-2xl bg-[#5b8af9]/20 border border-[#5b8af9]/30 flex items-center justify-center shadow-[0_0_32px_rgba(91,138,249,.2)]">
-            <IconPackage size={28} color="#5b8af9" />
+        <div className="flex flex-col items-center mb-8 gap-3">
+          <div className="w-16 h-16 rounded-[20px] bg-[#5b8af9]/20 border border-[#5b8af9]/30 flex items-center justify-center shadow-[0_0_32px_rgba(91,138,249,.2)]">
+            <IconPackage size={32} color="#5b8af9" />
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-bold text-[#e8e8f4] tracking-tight">Envíos App</h1>
-            <p className="text-[10px] text-[#5b8af9] font-bold uppercase tracking-wider mt-0.5">by Renace.tech</p>
-            <p className="text-xs text-[#6b6b8a] mt-0.5">Crear cuenta en la plataforma</p>
+            <h1 className="text-2xl font-black text-[#e8e8f4] tracking-tight">Envíos App</h1>
+            <p className="text-[11px] text-[#5b8af9] font-bold uppercase tracking-widest mt-1">by Renace.tech</p>
           </div>
         </div>
 
         {/* Card */}
-        <div className="bg-[#13131f] border border-[#252540] rounded-2xl p-6 shadow-[0_20px_60px_rgba(0,0,0,.5)]">
+        <div className="bg-[#13131f] border border-[#252540] rounded-3xl p-7 shadow-[0_30px_70px_rgba(0,0,0,.6)]">
           {/* Mode Switcher */}
-          <div className="flex bg-[#0b0b14] p-1 rounded-xl border border-[#252540] mb-5">
+          <div className="flex bg-[#0b0b14] p-1.5 rounded-2xl border border-[#252540] mb-6">
             <button
               type="button"
               onClick={() => setRegisterMode('new_company')}
-              className={`flex-1 py-2 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-all border-0 cursor-pointer ${
+              className={`flex-1 py-2.5 text-[10px] font-black rounded-xl uppercase tracking-wider transition-all border-0 cursor-pointer ${
                 registerMode === 'new_company'
                   ? 'bg-[#5b8af9] text-[#0b0b14]'
                   : 'bg-transparent text-[#6b6b8a] hover:text-[#e8e8f4]'
               }`}
             >
-              Nueva Empresa
+              Nueva
             </button>
             <button
               type="button"
               onClick={() => setRegisterMode('join_company')}
-              className={`flex-1 py-2 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-all border-0 cursor-pointer ${
+              className={`flex-1 py-2.5 text-[10px] font-black rounded-xl uppercase tracking-wider transition-all border-0 cursor-pointer ${
                 registerMode === 'join_company'
                   ? 'bg-[#5b8af9] text-[#0b0b14]'
                   : 'bg-transparent text-[#6b6b8a] hover:text-[#e8e8f4]'
@@ -120,7 +119,7 @@ export function Register() {
             <button
               type="button"
               onClick={() => setRegisterMode('customer')}
-              className={`flex-1 py-2 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-all border-0 cursor-pointer ${
+              className={`flex-1 py-2.5 text-[10px] font-black rounded-xl uppercase tracking-wider transition-all border-0 cursor-pointer ${
                 registerMode === 'customer'
                   ? 'bg-[#5b8af9] text-[#0b0b14]'
                   : 'bg-transparent text-[#6b6b8a] hover:text-[#e8e8f4]'

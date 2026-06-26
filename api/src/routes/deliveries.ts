@@ -485,6 +485,58 @@ deliveries.patch('/:id/deliver', auth, async (c) => {
   return c.json({ state: 'delivered' });
 });
 
+// ── Chat autenticado: listar mensajes ────────────────────────
+deliveries.get('/:id/messages', auth, async (c) => {
+  const user = c.get('user');
+  const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
+
+  const [delivery] = await sql`
+    SELECT id, messenger_id FROM deliveries
+    WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    LIMIT 1
+  `;
+  if (!delivery) return c.json({ error: 'No encontrado' }, 404);
+  if (user.role === 'messenger' && delivery.messenger_id !== user.sub) {
+    return c.json({ error: 'No autorizado' }, 403);
+  }
+
+  const messages = await sql`
+    SELECT id, sender, message, created_at
+    FROM delivery_messages
+    WHERE delivery_id = ${id}
+    ORDER BY created_at ASC
+  `;
+  return c.json(messages);
+});
+
+// ── Chat autenticado: enviar mensaje ─────────────────────────
+deliveries.post('/:id/messages', auth, async (c) => {
+  const user = c.get('user');
+  const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID de envío no válido' }, 400);
+  const { message } = await c.req.json<{ message: string }>();
+  if (!message?.trim()) return c.json({ error: 'Mensaje vacío' }, 400);
+
+  const [delivery] = await sql`
+    SELECT id, messenger_id FROM deliveries
+    WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    LIMIT 1
+  `;
+  if (!delivery) return c.json({ error: 'No encontrado' }, 404);
+  if (user.role === 'messenger' && delivery.messenger_id !== user.sub) {
+    return c.json({ error: 'No autorizado' }, 403);
+  }
+
+  const sender = user.role === 'messenger' ? 'messenger' : 'operator';
+  const [msg] = await sql`
+    INSERT INTO delivery_messages (delivery_id, sender, message)
+    VALUES (${id}, ${sender}, ${message.trim()})
+    RETURNING id, sender, message, created_at
+  `;
+  return c.json(msg, 201);
+});
+
 // ── Cancelar ─────────────────────────────────────────────────
 deliveries.patch('/:id/cancel', auth, operatorOnly, async (c) => {
   const user = c.get('user');
