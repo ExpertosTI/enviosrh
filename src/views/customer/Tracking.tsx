@@ -3,9 +3,13 @@ import { useParams } from 'react-router-dom';
 import { publicApi } from '../../lib/api';
 import type { DeliveryState, Tenant } from '../../types';
 import { STATE_LABEL } from '../../types';
-import { IconCheck, IconMotorbike, IconPackage, IconStar, IconMessage, IconSend } from '../../components/Icons';
+import { IconCheck, IconMotorbike, IconPackage, IconStar, IconMessage } from '../../components/Icons';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { applyTenantTheme } from '../../lib/theme';
+import { ChatPanel, type ChatMessage } from '../../components/ChatPanel';
+import { notifyProximity, resetProximityFlag, setupPushForDelivery } from '../../lib/push';
+import { OnboardingTour } from '../../components/OnboardingTour';
+import { useDeliveryWebSocket } from '../../lib/ws';
 import L from 'leaflet';
 
 interface PublicDelivery {
@@ -31,6 +35,7 @@ interface PublicDelivery {
   tenant?: Tenant;
   total_amount?: number;
   products?: string | null;
+  at_destination_at?: string | null;
 }
 
 const STEPS: { state: DeliveryState; label: string; icon: React.ReactNode }[] = [
@@ -107,6 +112,7 @@ export function CustomerTracking() {
   const [preConfirming, setPreConfirming] = useState(false);
   const [rating, setRating] = useState(0);
   const [rated, setRated] = useState(false);
+  const [ratingComment, setRatingComment] = useState('');
 
   const [proximityAlert, setProximityAlert] = useState(false);
   const [etaSeconds, setEtaSeconds] = useState<number | null>(null);
@@ -137,9 +143,19 @@ export function CustomerTracking() {
       });
   };
 
+  const loadRef = useRef(loadDelivery);
+  loadRef.current = loadDelivery;
+  useDeliveryWebSocket(token ? `/p/c/${token}/ws` : null, (ev) => {
+    if (ev.type === 'state' || ev.type === 'location') loadRef.current(true);
+  });
+
   useEffect(() => {
     loadDelivery();
   }, [token]);
+
+  useEffect(() => {
+    if (delivery?.id) setupPushForDelivery(delivery.id, 'customer');
+  }, [delivery?.id]);
 
   useEffect(() => {
     if (delivery?.tenant) {
@@ -160,111 +176,28 @@ export function CustomerTracking() {
   }, [delivery?.state]);
 
   // ── Chat Realtime ──
-  interface ChatMessage {
-    id: string;
-    sender: 'messenger' | 'customer';
-    message: string;
-    created_at: string;
-  }
   const [showChat, setShowChat] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [newMsg, setNewMsg] = useState('');
-  const [sendingMsg, setSendingMsg] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const lastSeenIdRef = useRef<string | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const loadMessages = useCallback(async (fromBackground = false) => {
+  const loadMessages = useCallback(async () => {
     if (!token) return;
-    if (!showChat && !fromBackground) return;
     try {
       const msgs = await publicApi.get<ChatMessage[]>(`/p/c/${token}/chat`);
       setMessages(msgs);
-      if (!showChat) {
-        const lastSeen = lastSeenIdRef.current;
-        const messengerMsgs = msgs.filter(m => m.sender === 'messenger');
-        if (!lastSeen) {
-          setUnreadCount(messengerMsgs.length);
-        } else {
-          const lastSeenIdx = msgs.findIndex(m => m.id === lastSeen);
-          const newMsgs = msgs.slice(lastSeenIdx + 1).filter(m => m.sender === 'messenger');
-          setUnreadCount(newMsgs.length);
-        }
-      } else {
-        if (msgs.length > 0) lastSeenIdRef.current = msgs[msgs.length - 1].id;
-        setUnreadCount(0);
-      }
-    } catch (e) {
-      console.warn('Error loading chat messages:', e);
-    }
-  }, [token, showChat]);
+      setUnreadCount(msgs.filter(m => m.sender === 'messenger' && !m.read_at).length);
+    } catch { /* */ }
+  }, [token]);
 
-  // Polling: activo (3s) si chat abierto, background (10s) si cerrado.
-  // Se pausa automáticamente cuando el tab no está visible.
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const startPolling = () => {
-      if (interval) return;
-      loadMessages(true);
-      interval = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          loadMessages(true);
-        }
-      }, showChat ? 3000 : 10000);
-    };
-
-    const stopPolling = () => {
-      if (interval) { clearInterval(interval); interval = null; }
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadMessages(true); // carga inmediata al volver
-        startPolling();
-      } else {
-        stopPolling();
-      }
-    };
-
-    startPolling();
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      stopPolling();
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [showChat, loadMessages]);
-
-  // Auto-scroll al final del chat al recibir mensajes
-  useEffect(() => {
-    if (showChat) {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, showChat]);
-
-  const handleOpenChat = () => {
-    setShowChat(true);
-    setUnreadCount(0);
-    if (messages.length > 0) lastSeenIdRef.current = messages[messages.length - 1].id;
-  };
-
-  async function handleSendMessage(e: React.FormEvent) {
-    e.preventDefault();
-    if (!token || !newMsg.trim() || sendingMsg) return;
-    setSendingMsg(true);
-    try {
-      const sent = await publicApi.post<ChatMessage>(`/p/c/${token}/chat`, { message: newMsg });
-      setMessages((prev) => [...prev, sent]);
-      setNewMsg('');
-      lastSeenIdRef.current = sent.id;
-    } catch (err) {
-      console.error('Error sending message:', err);
-    } finally {
-      setSendingMsg(false);
-    }
+  async function shareMyLocation() {
+    if (!token || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      await publicApi.post(`/p/c/${token}/location`, {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      });
+    });
   }
-
 
   // Parsear coordenadas del cliente
   const getDestinationCoords = (): [number, number] => {
@@ -389,12 +322,14 @@ export function CustomerTracking() {
       const distanceToDestination = calculateDistance(mLat, mLng, destCoords[0], destCoords[1]);
       if (distanceToDestination < 200) {
         setProximityAlert(true);
+        notifyProximity('¡Repartidor cerca!', 'El mensajero está a menos de 200 metros.');
         if (!hasBeepedRef.current) {
           playProximityBeep();
           hasBeepedRef.current = true;
         }
       } else {
         setProximityAlert(false);
+        resetProximityFlag();
         hasBeepedRef.current = false;
       }
 
@@ -509,7 +444,7 @@ export function CustomerTracking() {
     if (!token || rating === 0) return;
     setConfirming(true);
     try {
-      await publicApi.post(`/p/c/${token}/confirm`, { rating });
+      await publicApi.post(`/p/c/${token}/confirm`, { rating, comment: ratingComment || undefined });
       setRated(true);
       setDelivery((d) => d ? { ...d, can_confirm: false, rating } : d);
     } catch (err) {
@@ -630,6 +565,7 @@ export function CustomerTracking() {
   // 2. Pantalla de Seguimiento (si ya está pre-confirmado)
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0b0b14] flex flex-col transition-colors duration-200">
+      <OnboardingTour role="customer" />
       {/* Header */}
       <header className="bg-white dark:bg-[#13131f]/95 backdrop-blur border-b border-slate-200 dark:border-[#252540] px-4 py-3 flex items-center justify-between sticky top-0 z-20 transition-colors duration-200">
         <div className="flex items-center gap-2.5">
@@ -658,6 +594,11 @@ export function CustomerTracking() {
         {delivery?.state === 'in_transit' && (
           <div className="absolute bottom-3 left-3 z-[999] bg-[#f59e0b]/90 text-[#0b0b14] px-3 py-1.5 rounded-lg text-[10px] font-extrabold shadow-lg flex items-center gap-1.5 animate-pulse">
             <span className="w-2 h-2 rounded-full bg-[#0b0b14]"></span> MOTO EN CAMINO
+          </div>
+        )}
+        {delivery?.at_destination_at && delivery.state === 'in_transit' && (
+          <div className="absolute top-3 right-3 z-[999] bg-[#22c55e]/95 text-white px-3 py-1.5 rounded-lg text-[10px] font-extrabold shadow-lg" role="status">
+            🎯 Mensajero en tu ubicación
           </div>
         )}
         {routeInfo && (
@@ -772,7 +713,7 @@ export function CustomerTracking() {
                 {delivery.messenger_phone && (
                   <div className="flex gap-1.5 shrink-0">
                     <button
-                      onClick={handleOpenChat}
+                      onClick={() => setShowChat(true)}
                       className="relative px-3 py-1.5 rounded-lg bg-[#5b8af9]/15 text-[#5b8af9] text-xs font-bold hover:bg-[#5b8af9]/25 transition-colors border-0 cursor-pointer flex items-center gap-1"
                     >
                       <IconMessage size={13} /> Chat
@@ -798,6 +739,19 @@ export function CustomerTracking() {
                 <div className="flex justify-center py-1">
                   <StarRating value={rating} onChange={setRating} />
                 </div>
+                <textarea
+                  className="input h-16 resize-none text-sm"
+                  placeholder="Comentario sobre la entrega (opcional)"
+                  value={ratingComment}
+                  onChange={e => setRatingComment(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={shareMyLocation}
+                  className="w-full py-2 rounded-xl border border-[#5b8af9]/30 text-[#5b8af9] text-xs font-bold bg-transparent cursor-pointer"
+                >
+                  📍 Compartir mi ubicación actual
+                </button>
                 <button
                   onClick={confirmReceipt}
                   disabled={confirming || rating === 0}
@@ -845,82 +799,21 @@ export function CustomerTracking() {
         </div>
       )}
 
-      {/* ── Overlay Chat Modal Premium ── */}
-      {showChat && delivery && (
-        <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#13131f] border-t sm:border border-slate-200 dark:border-[#252540] rounded-t-2xl sm:rounded-2xl w-full max-w-md h-[90vh] sm:h-[600px] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300">
-            {/* Header */}
-            <div className="px-4 py-3 border-b border-slate-200 dark:border-[#252540] flex justify-between items-center bg-slate-50 dark:bg-[#0b0b14]">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[#5b8af9]/15 flex items-center justify-center font-bold text-[#5b8af9] text-xs">
-                  {delivery.messenger_name?.charAt(0).toUpperCase() || 'M'}
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-[#e8e8f4]">{delivery.messenger_name}</div>
-                  <div className="text-[9px] text-green-500 font-semibold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Chat Activo
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowChat(false)}
-                className="text-[#6b6b8a] hover:text-[#e8e8f4] bg-transparent border-0 cursor-pointer p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-[#252540] transition-colors text-xs font-bold"
-              >
-                Cerrar
-              </button>
-            </div>
-
-            {/* Messages body */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 dark:bg-[#0b0b14]">
-              {messages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 gap-2">
-                  <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-[#252540]/60 flex items-center justify-center text-slate-400 dark:text-[#6b6b8a]">
-                    <IconMessage size={18} />
-                  </div>
-                  <p className="text-xs font-bold text-slate-500 dark:text-[#6b6b8a]">Di algo para iniciar el chat</p>
-                  <p className="text-[10px] text-slate-400 dark:text-[#3a3a58]">El mensajero podrá ver y responder tus mensajes.</p>
-                </div>
-              ) : (
-                messages.map((m) => {
-                  const isMe = m.sender === 'customer';
-                  return (
-                    <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-sm ${
-                        isMe
-                          ? 'bg-[#5b8af9] text-white rounded-tr-none'
-                          : 'bg-white dark:bg-[#1c1c30] text-slate-800 dark:text-[#e8e8f4] border border-slate-100 dark:border-[#252540] rounded-tl-none'
-                      }`}>
-                        <p className="break-words">{m.message}</p>
-                        <div className={`text-[8px] mt-1 text-right ${isMe ? 'text-white/75' : 'text-slate-400 dark:text-[#6b6b8a]'}`}>
-                          {new Date(m.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Input form */}
-            <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-200 dark:border-[#252540] flex gap-2 bg-white dark:bg-[#13131f]">
-              <input
-                type="text"
-                value={newMsg}
-                onChange={(e) => setNewMsg(e.target.value)}
-                placeholder="Escribe un mensaje al mensajero..."
-                className="flex-1 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl px-3 py-2 text-xs outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
-              />
-              <button
-                type="submit"
-                disabled={!newMsg.trim() || sendingMsg}
-                className="p-2.5 rounded-xl bg-[#5b8af9] hover:bg-[#3a68e0] text-white disabled:opacity-40 transition-colors border-0 cursor-pointer flex items-center justify-center"
-              >
-                <IconSend size={15} color="#ffffff" />
-              </button>
-            </form>
-          </div>
-        </div>
+      {delivery && (
+        <ChatPanel
+          open={showChat}
+          onClose={() => setShowChat(false)}
+          peerName={delivery.messenger_name ?? 'Mensajero'}
+          peerInitial={delivery.messenger_name?.charAt(0).toUpperCase() || 'M'}
+          messages={messages}
+          mySender="customer"
+          streamPath={token ? `/p/c/${token}/stream` : null}
+          onLoad={loadMessages}
+          onMarkRead={() => token ? publicApi.post(`/p/c/${token}/chat/read`, {}) : Promise.resolve()}
+          onTyping={(typing) => token ? publicApi.post(`/p/c/${token}/typing`, { typing }) : Promise.resolve()}
+          onSend={async (text) => { await publicApi.post(`/p/c/${token}/chat`, { message: text }); await loadMessages(); }}
+          placeholder="Escribe un mensaje al mensajero..."
+        />
       )}
     </div>
   );

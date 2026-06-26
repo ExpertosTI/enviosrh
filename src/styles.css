@@ -287,6 +287,54 @@
 .bg-\[\#0a2a18\] { background-color: var(--badge-delivered-bg) !important; }
 .text-\[\#22c55e\] { color: var(--badge-delivered-text) !important; }
 
+/* Chat — burbujas y modal con contraste correcto en claro/oscuro */
+.chat-modal {
+  background-color: var(--surface-color);
+  border-color: var(--border-color);
+}
+.chat-modal-header {
+  background-color: var(--bg-color);
+  border-color: var(--border-color);
+}
+.chat-modal-body {
+  background-color: var(--bg-color);
+}
+.chat-modal-footer {
+  background-color: var(--surface-color);
+  border-color: var(--border-color);
+}
+.chat-input {
+  background-color: var(--input-bg);
+  border-color: var(--border-color);
+  color: var(--ink-color);
+}
+.chat-input::placeholder {
+  color: var(--input-placeholder);
+}
+.chat-bubble-sent {
+  background-color: #5b8af9 !important;
+  color: #ffffff !important;
+}
+.chat-bubble-received {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border: 1px solid #e2e8f0 !important;
+}
+.dark .chat-bubble-received {
+  background-color: #1c1c30 !important;
+  color: #e8e8f4 !important;
+  border-color: #252540 !important;
+}
+.chat-bubble-sent .chat-time {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+.chat-bubble-received .chat-time {
+  color: #64748b !important;
+}
+.dark .chat-bubble-received .chat-time {
+  color: #6b6b8a !important;
+}
+
 /* Correcciones de visibilidad para Leaflet en modo claro */
 .leaflet-popup-content-wrapper {
   background-color: var(--surface-color) !important;

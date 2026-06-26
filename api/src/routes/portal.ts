@@ -2,6 +2,9 @@ import { Hono } from 'hono';
 import sql from '../db/index.js';
 import { sendOperatorAlertEmail } from '../lib/email.js';
 import { isValidToken } from '../lib/validation.js';
+import { emitDeliveryEvent, setTyping, getTyping } from '../lib/realtime.js';
+import { notifyDelivery } from '../lib/pushNotify.js';
+import { recordMessengerLocation } from '../lib/locationHistory.js';
 
 /** Rutas públicas: no requieren JWT. Usan tokens firmados de BD. */
 const portal = new Hono();
@@ -65,6 +68,8 @@ portal.get('/c/:token', async (c) => {
       d.messenger_note, d.notes,
       d.pre_confirmed, d.address_override,
       d.total_amount, d.products, d.area_zone,
+      d.customer_latitude, d.customer_longitude, d.customer_location_updated_at,
+      d.rating_note, d.at_destination_at,
       c.name AS customer_name,
       c.phone AS customer_phone,
       c.address AS customer_address,
@@ -117,6 +122,11 @@ portal.get('/c/:token', async (c) => {
     total_amount: Number(row.total_amount || 0),
     products: row.products ?? null,
     area_zone: row.area_zone ?? null,
+    customer_latitude: row.customer_latitude ? Number(row.customer_latitude) : null,
+    customer_longitude: row.customer_longitude ? Number(row.customer_longitude) : null,
+    customer_location_updated_at: row.customer_location_updated_at,
+    rating_note: row.rating_note ?? null,
+    at_destination_at: row.at_destination_at ?? null,
     can_confirm: row.state === 'delivered' && !row.customer_confirmed,
     rating: row.rating,
     tenant: {
@@ -167,7 +177,7 @@ portal.post('/c/:token/pre-confirm', async (c) => {
 // ── Portal cliente: confirmar recepción ───────────────────────
 portal.post('/c/:token/confirm', async (c) => {
   const { token } = c.req.param();
-  const { rating } = await c.req.json<{ rating?: number }>().catch(() => ({ rating: undefined }));
+  const { rating, comment } = await c.req.json<{ rating?: number; comment?: string }>().catch(() => ({ rating: undefined, comment: undefined }));
 
   const [row] = await sql`
     SELECT id, state FROM deliveries WHERE customer_token = ${token} LIMIT 1
@@ -181,7 +191,8 @@ portal.post('/c/:token/confirm', async (c) => {
     UPDATE deliveries
     SET customer_confirmed = true,
         customer_confirmed_at = now(),
-        rating = COALESCE(${rating ?? null}, rating)
+        rating = COALESCE(${rating ?? null}, rating),
+        rating_note = COALESCE(${comment ?? null}, rating_note)
     WHERE id = ${row.id}
   `;
   await sql`
@@ -313,6 +324,7 @@ portal.post('/m/:token/in-transit', async (c) => {
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
     VALUES (${row.id}, 'in_transit', ${row.messenger_id}, 'messenger', 'Mensajero inició entrega via portal')
   `;
+  emitDeliveryEvent(row.id, { type: 'state', data: { state: 'in_transit' } });
   return c.json({ ok: true, state: 'in_transit' });
 });
 
@@ -366,6 +378,8 @@ portal.post('/m/:token/location', async (c) => {
     return c.json({ error: 'Mensajero no asignado' }, 404);
   }
 
+  await recordMessengerLocation(updated.id, latitude, longitude);
+
   return c.json({ ok: true });
 });
 
@@ -376,12 +390,72 @@ portal.get('/c/:token/chat', async (c) => {
   if (!row) return c.json({ error: 'Envío no encontrado' }, 404);
 
   const messages = await sql`
-    SELECT id, sender, message, created_at
+    SELECT id, sender, message, created_at, read_at
     FROM delivery_messages
     WHERE delivery_id = ${row.id}
     ORDER BY created_at ASC
   `;
   return c.json(messages);
+});
+
+// ── Portal cliente: compartir ubicación en vivo ─────────────────
+portal.post('/c/:token/location', async (c) => {
+  const { token } = c.req.param();
+  const { latitude, longitude } = await c.req.json<{ latitude: number; longitude: number }>();
+  if (latitude === undefined || longitude === undefined) {
+    return c.json({ error: 'Coordenadas requeridas' }, 400);
+  }
+
+  const [row] = await sql`
+    UPDATE deliveries
+    SET customer_latitude = ${latitude},
+        customer_longitude = ${longitude},
+        customer_location_updated_at = now()
+    WHERE customer_token = ${token}
+    RETURNING id
+  `;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+
+  emitDeliveryEvent(row.id, {
+    type: 'location',
+    data: { customer_latitude: latitude, customer_longitude: longitude, source: 'customer' },
+  });
+  return c.json({ ok: true });
+});
+
+// ── Portal cliente: indicador de escritura ─────────────────────
+portal.post('/c/:token/typing', async (c) => {
+  const { token } = c.req.param();
+  const { typing } = await c.req.json<{ typing: boolean }>();
+  const [row] = await sql`SELECT id FROM deliveries WHERE customer_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+  setTyping(row.id, 'customer', !!typing);
+  return c.json({ ok: true });
+});
+
+portal.get('/c/:token/typing', async (c) => {
+  const { token } = c.req.param();
+  const [row] = await sql`SELECT id FROM deliveries WHERE customer_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+  return c.json({ typing: getTyping(row.id, 'customer') });
+});
+
+// ── Portal cliente: marcar mensajes como leídos ───────────────
+portal.post('/c/:token/chat/read', async (c) => {
+  const { token } = c.req.param();
+  const [row] = await sql`SELECT id FROM deliveries WHERE customer_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+
+  const updated = await sql`
+    UPDATE delivery_messages
+    SET read_at = now()
+    WHERE delivery_id = ${row.id} AND sender = 'messenger' AND read_at IS NULL
+    RETURNING id
+  `;
+  if (updated.length) {
+    emitDeliveryEvent(row.id, { type: 'read', data: { messageIds: updated.map(m => m.id), reader: 'customer' } });
+  }
+  return c.json({ ok: true, count: updated.length });
 });
 
 // ── Portal cliente: enviar mensaje al chat ───────────────────────
@@ -396,8 +470,10 @@ portal.post('/c/:token/chat', async (c) => {
   const [newMessage] = await sql`
     INSERT INTO delivery_messages (delivery_id, sender, message)
     VALUES (${row.id}, 'customer', ${message.trim()})
-    RETURNING id, sender, message, created_at
+    RETURNING id, sender, message, created_at, read_at
   `;
+  emitDeliveryEvent(row.id, { type: 'message', data: newMessage });
+  await notifyDelivery(row.id, { title: 'Mensaje del cliente', body: message.trim().slice(0, 80) }, ['messenger']);
   return c.json(newMessage);
 });
 
@@ -408,12 +484,45 @@ portal.get('/m/:token/chat', async (c) => {
   if (!row) return c.json({ error: 'Envío no encontrado' }, 404);
 
   const messages = await sql`
-    SELECT id, sender, message, created_at
+    SELECT id, sender, message, created_at, read_at
     FROM delivery_messages
     WHERE delivery_id = ${row.id}
     ORDER BY created_at ASC
   `;
   return c.json(messages);
+});
+
+portal.post('/m/:token/typing', async (c) => {
+  const { token } = c.req.param();
+  const { typing } = await c.req.json<{ typing: boolean }>();
+  const [row] = await sql`SELECT id FROM deliveries WHERE messenger_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+  setTyping(row.id, 'messenger', !!typing);
+  return c.json({ ok: true });
+});
+
+portal.get('/m/:token/typing', async (c) => {
+  const { token } = c.req.param();
+  const [row] = await sql`SELECT id FROM deliveries WHERE messenger_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+  return c.json({ typing: getTyping(row.id, 'messenger') });
+});
+
+portal.post('/m/:token/chat/read', async (c) => {
+  const { token } = c.req.param();
+  const [row] = await sql`SELECT id FROM deliveries WHERE messenger_token = ${token} LIMIT 1`;
+  if (!row) return c.json({ error: 'No encontrado' }, 404);
+
+  const updated = await sql`
+    UPDATE delivery_messages
+    SET read_at = now()
+    WHERE delivery_id = ${row.id} AND sender = 'customer' AND read_at IS NULL
+    RETURNING id
+  `;
+  if (updated.length) {
+    emitDeliveryEvent(row.id, { type: 'read', data: { messageIds: updated.map(m => m.id), reader: 'messenger' } });
+  }
+  return c.json({ ok: true, count: updated.length });
 });
 
 // ── Portal mensajero: enviar mensaje al chat ─────────────────────
@@ -428,8 +537,10 @@ portal.post('/m/:token/chat', async (c) => {
   const [newMessage] = await sql`
     INSERT INTO delivery_messages (delivery_id, sender, message)
     VALUES (${row.id}, 'messenger', ${message.trim()})
-    RETURNING id, sender, message, created_at
+    RETURNING id, sender, message, created_at, read_at
   `;
+  emitDeliveryEvent(row.id, { type: 'message', data: newMessage });
+  await notifyDelivery(row.id, { title: 'Mensaje del mensajero', body: message.trim().slice(0, 80) }, ['customer']);
   return c.json(newMessage);
 });
 

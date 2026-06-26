@@ -10,6 +10,8 @@ export interface Tenant {
   contact_email: string | null;
   contact_phone: string | null;
   address: string | null;
+  custom_domain?: string | null;
+  favicon_url?: string | null;
 }
 
 export interface User {

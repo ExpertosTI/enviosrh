@@ -19,6 +19,16 @@ export function applyTenantTheme(tenant: Tenant | null | undefined) {
     root.style.setProperty('--accent-color', tenant.accent_color);
   }
 
+  if (tenant.favicon_url) {
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = tenant.favicon_url;
+  }
+
   // Modos de tema visual
   if (tenant.theme_mode === 'glass') {
     root.classList.add('dark');

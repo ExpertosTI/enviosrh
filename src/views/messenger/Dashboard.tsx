@@ -5,6 +5,9 @@ import type { Delivery, DeliveryState } from '../../types';
 import { STATE_LABEL } from '../../types';
 import { AppShell, PageHeader } from '../../components/AppShell';
 import { IconPackage, IconMotorbike, IconCheck } from '../../components/Icons';
+import { RouteOptimizer } from '../../components/RouteOptimizer';
+import { OnboardingTour } from '../../components/OnboardingTour';
+import { getQueueSize } from '../../lib/offline';
 import { useGps } from '../../lib/GpsContext';
 
 const BADGE_BG: Record<DeliveryState, string> = {
@@ -28,6 +31,14 @@ export function MessengerDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { status: gpsStatus, coords, accuracy, requestGps } = useGps();
+  const [queueSize, setQueueSize] = useState(0);
+
+  useEffect(() => {
+    const tick = () => { getQueueSize().then(setQueueSize); };
+    tick();
+    const iv = setInterval(tick, 3000);
+    return () => clearInterval(iv);
+  }, []);
 
   const loadDeliveries = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -97,6 +108,7 @@ export function MessengerDashboard() {
 
   return (
     <AppShell>
+      <OnboardingTour role="messenger" />
       <PageHeader
         title="Mis envíos"
         actions={
@@ -194,6 +206,12 @@ export function MessengerDashboard() {
         {loading && <div className="spinner" />}
         {error && <div className="banner-error">{error}</div>}
 
+
+        {queueSize > 0 && (
+          <div className="banner-info text-xs">⏳ {queueSize} acción(es) pendiente(s) de sincronizar</div>
+        )}
+
+        <RouteOptimizer deliveries={deliveries} />
 
         {/* En camino */}
         {active.length > 0 && (

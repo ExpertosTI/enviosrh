@@ -4,6 +4,8 @@ import { auth, operatorOnly } from '../middleware/auth.js';
 import { messengerMessage, customerMessage, waLink } from '../lib/whatsapp.js';
 import { sendCustomerTrackingEmail, sendMessengerAssignmentEmail, sendOperatorAlertEmail } from '../lib/email.js';
 import { isValidUuid } from '../lib/validation.js';
+import { emitDeliveryEvent, setTyping } from '../lib/realtime.js';
+import { recordMessengerLocation } from '../lib/locationHistory.js';
 
 const deliveries = new Hono();
 
@@ -455,6 +457,7 @@ deliveries.patch('/:id/in-transit', auth, async (c) => {
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role)
     VALUES (${id}, 'in_transit', ${user.sub}, ${user.role})
   `;
+  emitDeliveryEvent(id, { type: 'state', data: { state: 'in_transit' } });
   return c.json({ state: 'in_transit' });
 });
 
@@ -502,13 +505,96 @@ deliveries.get('/:id/messages', auth, async (c) => {
   }
 
   const messages = await sql`
-    SELECT id, sender, message, created_at
+    SELECT id, sender, message, created_at, read_at
     FROM delivery_messages
     WHERE delivery_id = ${id}
     ORDER BY created_at ASC
   `;
   return c.json(messages);
 });
+
+deliveries.post('/:id/messages/read', auth, async (c) => {
+  const user = c.get('user');
+  const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID inválido' }, 400);
+
+  const [delivery] = await sql`SELECT messenger_id FROM deliveries WHERE id = ${id} AND tenant_id = ${user.tenant_id}`;
+  if (!delivery) return c.json({ error: 'No encontrado' }, 404);
+  if (user.role === 'messenger' && delivery.messenger_id !== user.sub) {
+    return c.json({ error: 'No autorizado' }, 403);
+  }
+
+  const readerSender = user.role === 'messenger' ? 'customer' : 'messenger';
+  const updated = await sql`
+    UPDATE delivery_messages SET read_at = now()
+    WHERE delivery_id = ${id} AND sender = ${readerSender} AND read_at IS NULL
+    RETURNING id
+  `;
+  if (updated.length) {
+    emitDeliveryEvent(id, { type: 'read', data: { messageIds: updated.map(m => m.id), reader: user.role } });
+  }
+  return c.json({ ok: true, count: updated.length });
+});
+
+deliveries.post('/:id/typing', auth, async (c) => {
+  const user = c.get('user');
+  const { id } = c.req.param();
+  const { typing } = await c.req.json<{ typing: boolean }>();
+  if (!isValidUuid(id)) return c.json({ error: 'ID inválido' }, 400);
+
+  const [delivery] = await sql`SELECT messenger_id FROM deliveries WHERE id = ${id} AND tenant_id = ${user.tenant_id}`;
+  if (!delivery) return c.json({ error: 'No encontrado' }, 404);
+  if (user.role === 'messenger' && delivery.messenger_id !== user.sub) {
+    return c.json({ error: 'No autorizado' }, 403);
+  }
+  setTyping(id, user.role === 'messenger' ? 'messenger' : 'operator', !!typing);
+  return c.json({ ok: true });
+});
+
+// ── Auto-asignar según reglas configurables ─────────
+deliveries.post('/:id/auto-assign', auth, operatorOnly, async (c) => {
+  const user = c.get('user');
+  const { id } = c.req.param();
+  if (!isValidUuid(id)) return c.json({ error: 'ID inválido' }, 400);
+
+  const [delivery] = await sql`
+    SELECT d.id, d.location_link, d.area_zone
+    FROM deliveries d
+    WHERE d.id = ${id} AND d.tenant_id = ${user.tenant_id}
+  `;
+  if (!delivery) return c.json({ error: 'No encontrado' }, 404);
+
+  const { pickMessenger } = await import('../lib/assignEngine.js');
+  const destCoords = parseCoords(delivery.location_link);
+  const best = await pickMessenger(user.tenant_id, destCoords, delivery.area_zone);
+
+  if (!best) return c.json({ error: 'No hay mensajeros disponibles' }, 404);
+
+  await sql`
+    UPDATE deliveries SET messenger_id = ${best.id}, state = 'assigned', assigned_at = now()
+    WHERE id = ${id}
+  `;
+  await sql`
+    INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
+    VALUES (${id}, 'assigned', ${user.sub}, 'operator', ${'Auto-asignado a ' + best.name})
+  `;
+  const { notifyDelivery } = await import('../lib/pushNotify.js');
+  await notifyDelivery(id, { title: 'Nuevo envío', body: `Asignado a ${best.name}` }, ['messenger']);
+  return c.json({ ok: true, messenger_id: best.id, messenger_name: best.name });
+});
+
+function parseCoords(link: string | null): [number, number] | null {
+  if (!link) return null;
+  const m = link.match(/([-\d.]+),\s*([-\d.]+)/);
+  return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
+function haversine(a: [number, number], b: [number, number]) {
+  const R = 6371;
+  const dLat = (b[0]-a[0])*Math.PI/180, dLng = (b[1]-a[1])*Math.PI/180;
+  const x = Math.sin(dLat/2)**2 + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
 
 // ── Chat autenticado: enviar mensaje ─────────────────────────
 deliveries.post('/:id/messages', auth, async (c) => {
@@ -532,8 +618,9 @@ deliveries.post('/:id/messages', auth, async (c) => {
   const [msg] = await sql`
     INSERT INTO delivery_messages (delivery_id, sender, message)
     VALUES (${id}, ${sender}, ${message.trim()})
-    RETURNING id, sender, message, created_at
+    RETURNING id, sender, message, created_at, read_at
   `;
+  emitDeliveryEvent(id, { type: 'message', data: msg });
   return c.json(msg, 201);
 });
 

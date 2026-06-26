@@ -1,7 +1,10 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { api, uploadFile } from '../../lib/api';
+import { exportToCsv, exportToPdfHtml } from '../../lib/export';
 import { AppShell, PageHeader } from '../../components/AppShell';
 import { TenantSettings } from './TenantSettings';
+import { AssignRulesSettings } from '../../components/AssignRulesSettings';
+import { BillingPanel } from '../../components/BillingPanel';
 import { getSession } from '../../lib/auth';
 import { IconUser } from '../../components/Icons';
 import L from 'leaflet';
@@ -113,6 +116,7 @@ export function AdminPanel() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'sellers' | 'messengers' | 'customers' | 'settings'>('messengers');
   const [search, setSearch] = useState('');
+  const [chartData, setChartData] = useState<{ daily: { day: string; delivered: number; fees: number }[]; summary: { avg_delivery_minutes: number } } | null>(null);
 
   // ── Modal de Registro de Colaboradores ──
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -256,6 +260,9 @@ export function AdminPanel() {
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : 'Error al cargar datos'))
       .finally(() => setLoading(false));
+    api.get<typeof chartData>('/analytics/dashboard?days=14')
+      .then(setChartData)
+      .catch(() => {});
   }, []);
 
   const stats = data?.stats;
@@ -345,6 +352,28 @@ export function AdminPanel() {
                 icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7caeff" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
               />
             </div>
+
+            {chartData && chartData.daily.length > 0 && (
+              <div className="card">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="card-title mb-0">Entregas últimos 14 días</div>
+                  <div className="flex gap-2">
+                    <a href="/operador/zonas" className="btn btn-ghost btn-sm text-xs no-underline">Zonas</a>
+                    <button type="button" onClick={() => api.get<Record<string,unknown>[]>('/analytics/export').then(rows => exportToCsv('envios-hoy.csv', rows))} className="btn btn-ghost btn-sm text-xs">CSV</button>
+                    <button type="button" onClick={() => api.get<Record<string,unknown>[]>('/analytics/export').then(rows => exportToPdfHtml('Reporte Envíos', rows))} className="btn btn-ghost btn-sm text-xs">PDF</button>
+                  </div>
+                </div>
+                <div className="flex items-end gap-1 h-28">
+                  {chartData.daily.map(d => (
+                    <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="w-full bg-[#5b8af9]/80 rounded-t" style={{ height: `${Math.max(8, d.delivered * 12)}px` }} title={`${d.delivered} entregas`} />
+                      <span className="text-[8px] text-[#6b6b8a]">{new Date(d.day).getDate()}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-[#6b6b8a] mt-2">Tiempo promedio de entrega: {chartData.summary.avg_delivery_minutes} min</p>
+              </div>
+            )}
 
             {/* ── Distribución de Estados ── */}
             <div className="bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-2xl p-5 transition-colors duration-200">
@@ -683,7 +712,9 @@ export function AdminPanel() {
               )}
               {/* ── Configuración de Marca ── */}
               {tab === 'settings' && (
-                <div className="p-4 md:p-6 bg-slate-50 dark:bg-[#0b0b14]/30">
+                <div className="p-4 md:p-6 bg-slate-50 dark:bg-[#0b0b14]/30 flex flex-col gap-2">
+                  <BillingPanel />
+                  <AssignRulesSettings />
                   <TenantSettings />
                 </div>
               )}

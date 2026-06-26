@@ -9,6 +9,8 @@ import { UsersApproval } from './views/operator/UsersApproval';
 import { NewDelivery } from './views/operator/NewDelivery';
 import { ShareDelivery } from './views/operator/ShareDelivery';
 import { AdminPanel } from './views/operator/AdminPanel';
+import { ZonesManager } from './views/operator/Zones';
+import { OperatorLiveMap } from './views/operator/LiveMap';
 import { MessengerDashboard } from './views/messenger/Dashboard';
 import { MessengerDelivery } from './views/messenger/Delivery';
 import { CustomerTracking } from './views/customer/Tracking';
@@ -64,6 +66,12 @@ export default function App() {
       } />
       <Route path="/operador/admin" element={
         <RequireAuth role="operator"><AdminPanel /></RequireAuth>
+      } />
+      <Route path="/operador/zonas" element={
+        <RequireAuth role="operator"><ZonesManager /></RequireAuth>
+      } />
+      <Route path="/operador/mapa" element={
+        <RequireAuth role="operator"><OperatorLiveMap /></RequireAuth>
       } />
 
       {/* Mensajero */}

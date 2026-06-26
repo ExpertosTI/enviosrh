@@ -4,6 +4,8 @@ import sql from '../db/index.js';
 import { auth, operatorOnly } from '../middleware/auth.js';
 import { isValidUuid } from '../lib/validation.js';
 import { sendEmployeeWelcomeEmail } from '../lib/email.js';
+import { recordMessengerLocation } from '../lib/locationHistory.js';
+import { checkGeofenceArrival } from '../lib/geofence.js';
 
 const users = new Hono();
 
@@ -209,6 +211,11 @@ users.post('/location', auth, async (c) => {
 
   if (!updated) {
     return c.json({ error: 'Usuario no encontrado' }, 404);
+  }
+
+  if (user.role === 'messenger') {
+    await recordMessengerLocation(user.sub, latitude, longitude);
+    await checkGeofenceArrival(user.sub, latitude, longitude);
   }
 
   return c.json(updated);

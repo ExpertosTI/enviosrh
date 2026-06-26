@@ -437,6 +437,9 @@ export function NewDelivery() {
         area_zone: form.area_zone || undefined,
       };
       const { id } = await api.post<{ id: string }>('/deliveries', body);
+      if (!form.messenger_id) {
+        try { await api.post(`/deliveries/${id}/auto-assign`, {}); } catch { /* sin mensajeros GPS */ }
+      }
       nav(`/operador/envio/${id}/compartir`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar');

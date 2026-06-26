@@ -11,16 +11,21 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "@hono/node-ws": "^1.0.8",
     "bcryptjs": "^3.0.2",
     "hono": "^4.7.11",
     "jose": "^5.10.0",
     "nodemailer": "^8.0.10",
-    "postgres": "^3.4.5"
+    "postgres": "^3.4.5",
+    "web-push": "^3.6.7",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.15.21",
     "@types/nodemailer": "^8.0.0",
+    "@types/web-push": "^3.6.4",
+    "@types/ws": "^8.5.14",
     "tsx": "^4.19.4",
     "typescript": "^5.7.3"
   }

@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import type { Delivery, DeliveryState } from '../../types';
 import { STATE_LABEL } from '../../types';
 import { AppShell, PageHeader } from '../../components/AppShell';
+import { OnboardingTour } from '../../components/OnboardingTour';
 import { IconPlus, IconPackage, IconMotorbike } from '../../components/Icons';
 import L from 'leaflet';
 
@@ -243,6 +244,7 @@ export function OperatorDashboard() {
 
   return (
     <AppShell>
+      <OnboardingTour role="operator" />
       <PageHeader
         title="Centro de Despacho RH"
         actions={

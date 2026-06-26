@@ -119,6 +119,22 @@ export function ShareDelivery() {
     } finally { setCancelling(false); }
   }
 
+  const [sendingWa, setSendingWa] = useState(false);
+
+  async function sendWhatsAppApi() {
+    if (!id) return;
+    setSendingWa(true);
+    try {
+      const res = await api.post<{ sent: boolean; wa_link: string; message: string }>(`/whatsapp/send-tracking/${id}`);
+      setSuccess(res.message);
+      if (!res.sent && res.wa_link) window.open(res.wa_link, '_blank');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al enviar WhatsApp');
+    } finally {
+      setSendingWa(false);
+    }
+  }
+
   async function handleNativeShare() {
     if (!share) return;
     const url = share.customer_token_url;
@@ -213,6 +229,10 @@ export function ShareDelivery() {
                 <IconWhatsApp size={16} /> Enviar por WhatsApp
               </a>
             )}
+            <button type="button" onClick={sendWhatsAppApi} disabled={sendingWa}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#128C7E]/15 text-[#128C7E] text-sm font-semibold hover:bg-[#128C7E]/25 transition-colors border-0 cursor-pointer disabled:opacity-50">
+              <IconWhatsApp size={16} /> {sendingWa ? 'Enviando…' : 'WhatsApp API'}
+            </button>
             {portalUrl && <CopyButton text={portalUrl} label="Copiar link" />}
             <button
               onClick={handleNativeShare}

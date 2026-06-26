@@ -6,6 +6,7 @@ import {
   IconPackage, IconPlus, IconLogout, IconUser, IconMotorbike,
 } from './Icons';
 import { ThemeToggle } from './ThemeToggle';
+import { useI18n } from '../lib/i18n';
 
 interface NavItem {
   to: string;
@@ -17,11 +18,21 @@ interface NavItem {
 function operatorNav(): NavItem[] {
   return [
     { to: '/operador', label: 'Envíos', icon: <IconPackage size={20} />, exact: true },
+    { to: '/operador/mapa', label: 'Mapa vivo', icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+      </svg>
+    )},
     { to: '/operador/nuevo', label: 'Nuevo envío', icon: <IconPlus size={20} /> },
     { to: '/operador/admin', label: 'Panel Admin', icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="3" width="7" height="9" rx="1"/><rect x="13" y="3" width="9" height="5" rx="1"/>
         <rect x="13" y="12" width="9" height="9" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/>
+      </svg>
+    )},
+    { to: '/operador/zonas', label: 'Zonas', icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>
       </svg>
     )},
   ];
@@ -31,6 +42,20 @@ function messengerNav(): NavItem[] {
   return [
     { to: '/mensajero', label: 'Mis envíos', icon: <IconMotorbike size={20} />, exact: true },
   ];
+}
+
+function LangToggle() {
+  const { lang, setLang } = useI18n();
+  return (
+    <button
+      type="button"
+      onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
+      className="px-2 py-1 rounded-lg text-[10px] font-bold text-[#6b6b8a] hover:text-[#e8e8f4] hover:bg-[#252540] transition-colors bg-transparent border border-[#252540] cursor-pointer"
+      title="Idioma"
+    >
+      {lang.toUpperCase()}
+    </button>
+  );
 }
 
 interface AppShellProps {
@@ -170,6 +195,7 @@ export function AppShell({ children, nav }: AppShellProps) {
                 <div className="text-[9px] text-[#6b6b8a] capitalize">{currentUser?.role === 'operator' ? 'Operador' : 'Mensajero'}</div>
               </div>
             </button>
+            <LangToggle />
             <ThemeToggle />
             <button
               onClick={handleLogout}
@@ -202,11 +228,12 @@ export function AppShell({ children, nav }: AppShellProps) {
             </div>
             <span className="text-xs font-semibold max-w-[80px] truncate">{currentUser?.name}</span>
           </button>
+          <LangToggle />
           <ThemeToggle />
         </header>
 
         {/* Page content */}
-        <div className="flex-1 overflow-y-auto bg-[#0b0b14]">
+        <div className="flex-1 overflow-y-auto bg-[#0b0b14]" id="main-content">
           {children}
         </div>
 

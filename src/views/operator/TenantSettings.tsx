@@ -12,7 +12,7 @@ export function TenantSettings() {
   const [success, setSuccess] = useState('');
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
-  const [form, setForm] = useState<Omit<Tenant, 'id' | 'slug' | 'created_at' | 'updated_at'>>({
+  const [form, setForm] = useState<Omit<Tenant, 'id' | 'slug' | 'created_at' | 'updated_at'> & { custom_domain?: string }>({
     name: '',
     logo_url: null,
     primary_color: '#5b8af9',
@@ -21,7 +21,9 @@ export function TenantSettings() {
     theme_mode: 'light',
     contact_email: '',
     contact_phone: '',
-    address: ''
+    address: '',
+    custom_domain: '',
+    favicon_url: null,
   });
 
   useEffect(() => {
@@ -36,7 +38,9 @@ export function TenantSettings() {
           theme_mode: data.theme_mode ?? 'light',
           contact_email: data.contact_email ?? '',
           contact_phone: data.contact_phone ?? '',
-          address: data.address ?? ''
+          address: data.address ?? '',
+          custom_domain: data.custom_domain ?? '',
+          favicon_url: data.favicon_url ?? null,
         });
         setLogoPreview(data.logo_url);
       })
@@ -144,6 +148,18 @@ export function TenantSettings() {
               onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
               className="input bg-[#0b0b14] border-[#252540] text-[#e8e8f4]"
               placeholder="Ej. 809-555-0100"
+              disabled={saving}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted">Dominio personalizado</label>
+            <input
+              type="text"
+              value={form.custom_domain || ''}
+              onChange={(e) => setForm({ ...form, custom_domain: e.target.value })}
+              className="input bg-[#0b0b14] border-[#252540] text-[#e8e8f4]"
+              placeholder="envios.tuempresa.com"
               disabled={saving}
             />
           </div>

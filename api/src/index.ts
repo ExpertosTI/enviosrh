@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { createNodeWebSocket } from '@hono/node-ws';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
@@ -14,6 +15,16 @@ import usersRoutes from './routes/users.js';
 import tenantRoutes from './routes/tenant.js';
 import portalRoutes from './routes/portal.js';
 import uploadsRoutes from './routes/uploads.js';
+import zonesRoutes from './routes/zones.js';
+import analyticsRoutes from './routes/analytics.js';
+import realtimeRoutes from './routes/realtime.js';
+import pushRoutes from './routes/push.js';
+import billingRoutes from './routes/billing.js';
+import assignRulesRoutes from './routes/assignRules.js';
+import whatsappRoutes from './routes/whatsapp.js';
+import liveRoutes from './routes/live.js';
+import { registerWsRoutes } from './routes/ws.js';
+import { captureException } from './lib/observability.js';
 import { serveStatic } from '@hono/node-server/serve-static';
 
 // ── Validar variables críticas antes de arrancar ────────────
@@ -87,6 +98,8 @@ async function bootstrapAdmin() {
 
 // ── App ─────────────────────────────────────────────────────
 const app = new Hono();
+const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
+registerWsRoutes(app, upgradeWebSocket);
 
 // Servir archivos estáticos de uploads
 app.use('/uploads/*', serveStatic({ root: './' }));
@@ -97,7 +110,7 @@ app.use('*', logger());
 app.use('*', cors({
   origin: APP_URL,
   allowHeaders: ['Authorization', 'Content-Type'],
-  allowMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   credentials: true,
 }));
 
@@ -140,7 +153,7 @@ app.use('*', async (c, next) => {
 
 // Manejo centralizado de errores (Security: no revelar stack traces en prod)
 app.onError((err, c) => {
-  console.error('[enviosrh-api] Unhandled Error:', err);
+  captureException(err, { path: c.req.path, method: c.req.method });
   return c.json({ error: 'Error interno del servidor' }, 500);
 });
 
@@ -158,6 +171,14 @@ app.route('/messengers', messengersRoutes);
 app.route('/users', usersRoutes);
 app.route('/tenant', tenantRoutes);
 app.route('/upload', uploadsRoutes);
+app.route('/zones', zonesRoutes);
+app.route('/analytics', analyticsRoutes);
+app.route('/', realtimeRoutes);
+app.route('/push', pushRoutes);
+app.route('/billing', billingRoutes);
+app.route('/assign-rules', assignRulesRoutes);
+app.route('/whatsapp', whatsappRoutes);
+app.route('/live', liveRoutes);
 
 // Rutas públicas de portal (sin prefijo /api, token en URL)
 app.route('/p', portalRoutes);
@@ -168,9 +189,10 @@ const port = Number(process.env.PORT ?? 3000);
 runMigrations()
   .then(() => bootstrapAdmin())
   .then(() => {
-    serve({ fetch: app.fetch, port }, () => {
+    const server = serve({ fetch: app.fetch, port }, () => {
       console.log(`[enviosrh-api] Escuchando en :${port}`);
     });
+    injectWebSocket(server);
   })
   .catch((err) => {
     console.error('[enviosrh-api] Error de arranque:', err);

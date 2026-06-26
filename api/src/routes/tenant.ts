@@ -10,7 +10,8 @@ tenant.get('/', auth, async (c) => {
   const user = c.get('user');
   
   const [row] = await sql`
-    SELECT id, name, slug, logo_url, primary_color, secondary_color, accent_color, theme_mode,
+    SELECT id, name, slug, logo_url, favicon_url, custom_domain,
+           primary_color, secondary_color, accent_color, theme_mode,
            contact_email, contact_phone, address, created_at, updated_at
     FROM tenants
     WHERE id = ${user.tenant_id}
@@ -37,6 +38,8 @@ tenant.patch('/', auth, operatorOnly, async (c) => {
     contact_email?: string | null;
     contact_phone?: string | null;
     address?: string | null;
+    custom_domain?: string | null;
+    favicon_url?: string | null;
   }>();
 
   // Validar tamaño de logotipo
@@ -84,6 +87,8 @@ tenant.patch('/', auth, operatorOnly, async (c) => {
       contact_email   = COALESCE(${body.contact_email ?? null}, contact_email),
       contact_phone   = COALESCE(${body.contact_phone ?? null}, contact_phone),
       address         = COALESCE(${body.address ?? null}, address),
+      custom_domain   = COALESCE(${body.custom_domain ?? null}, custom_domain),
+      favicon_url     = COALESCE(${body.favicon_url ?? null}, favicon_url),
       updated_at      = now()
     WHERE id = ${user.tenant_id}
     RETURNING *
