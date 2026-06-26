@@ -14,6 +14,8 @@ import { QrScanner } from '../../components/QrScanner';
 import { TurnByTurn } from '../../components/TurnByTurn';
 import { enqueueAction } from '../../lib/offline';
 import { useI18n } from '../../lib/i18n';
+import { parseLocationLink } from '../../lib/coords';
+import { useMapRoute } from '../../lib/useMapRoute';
 
 // ── Componente Principal ─────────────────────────────────────────────
 export function MessengerDelivery() {
@@ -32,6 +34,7 @@ export function MessengerDelivery() {
   const tileLayerRef    = useRef<L.TileLayer | null>(null);
   const courierMarkerRef = useRef<L.Marker | null>(null);
   const destinationMarkerRef = useRef<L.Marker | null>(null);
+  const routePolylineRef = useRef<L.Polyline | null>(null);
 
   // Chat
   const [showChat, setShowChat] = useState(false);
@@ -91,22 +94,26 @@ export function MessengerDelivery() {
   }, [id, delivery?.state]);
 
   // ── Mapa ────────────────────────────────────────────────────────
-  const getDestCoords = useCallback((): [number, number] | null => {
-    if (!delivery?.location_link) return null;
-    const match = delivery.location_link.match(/([-\d.]+),\s*([-\d.]+)/) || delivery.location_link.match(/query=([-\d.]+),([-\d.]+)/);
-    if (match) return [Number(match[1]), Number(match[2])];
-    return null;
-  }, [delivery]);
+  const destCoords = delivery ? parseLocationLink(delivery.location_link) : null;
+
+  const routeInfo = useMapRoute(
+    mapRef,
+    routePolylineRef,
+    coords,
+    destCoords,
+    !!(delivery && (delivery.state === 'assigned' || delivery.state === 'in_transit') && coords && destCoords),
+    { color: delivery?.state === 'in_transit' ? '#f59e0b' : '#5b8af9', fitBounds: false },
+  );
 
   useEffect(() => {
     if (!delivery || !mapContainerRef.current || mapRef.current) return;
-    const dest = getDestCoords() || [18.4861, -69.9312];
+    const dest = destCoords || [18.4861, -69.9312];
 
     mapRef.current = L.map(mapContainerRef.current, { zoomControl: false, attributionControl: false }).setView(dest, 15);
     const isDark = document.documentElement.classList.contains('dark');
     tileLayerRef.current = L.tileLayer(isDark ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(mapRef.current);
 
-    if (getDestCoords()) {
+    if (destCoords) {
       const icon = L.divIcon({
         className: '',
         html: `<div style="width:34px;height:34px;border-radius:50%;background:rgba(239,68,68,0.2);border:2px solid #ef4444;display:flex;align-items:center;justify-content:center;box-shadow:0 0 14px rgba(239,68,68,0.5)">
@@ -114,10 +121,16 @@ export function MessengerDelivery() {
                </div>`,
         iconSize: [34, 34], iconAnchor: [17, 17],
       });
-      destinationMarkerRef.current = L.marker(getDestCoords()!, { icon }).addTo(mapRef.current);
+      destinationMarkerRef.current = L.marker(destCoords, { icon }).addTo(mapRef.current);
     }
     setTimeout(() => mapRef.current?.invalidateSize(), 400);
-  }, [delivery]);
+  }, [delivery?.id, destCoords?.[0], destCoords?.[1]]);
+
+  useEffect(() => {
+    if (!mapRef.current || !coords || !destCoords) return;
+    const bounds = L.latLngBounds([coords, destCoords]);
+    mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+  }, [coords, destCoords, routeInfo?.duration_sec]);
 
   useEffect(() => {
     if (!mapRef.current || !coords) return;
@@ -174,14 +187,14 @@ export function MessengerDelivery() {
   // ── Firma ────────────────────────────────────────────────────────
   function sigDown(e: any) {
     const rect = signatureCanvasRef.current!.getBoundingClientRect();
-    lastPointRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    lastPointRef.current = { x: (e.clientX || e.touches?.[0]?.clientX) - rect.left, y: (e.clientY || e.touches?.[0]?.clientY) - rect.top };
     setIsDrawing(true); setHasSig(true);
   }
   function sigMove(e: any) {
     if (!isDrawing) return;
     const ctx = signatureCanvasRef.current!.getContext('2d')!;
     const rect = signatureCanvasRef.current!.getBoundingClientRect();
-    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const p = { x: (e.clientX || e.touches?.[0]?.clientX) - rect.left, y: (e.clientY || e.touches?.[0]?.clientY) - rect.top };
     ctx.beginPath(); ctx.moveTo(lastPointRef.current!.x, lastPointRef.current!.y);
     ctx.lineTo(p.x, p.y); ctx.strokeStyle = '#e8e8f4'; ctx.lineWidth = 2.5; ctx.stroke();
     lastPointRef.current = p;
@@ -215,9 +228,15 @@ export function MessengerDelivery() {
 
       <div className="relative h-64 w-full bg-[#0b0b14] overflow-hidden">
         <div ref={mapContainerRef} className="w-full h-full" />
-        {isInTransit && getDestCoords() && (
+        {routeInfo && (isAssigned || isInTransit) && (
+          <div className="absolute bottom-2 left-2 z-[1000] bg-[#13131f]/95 border border-[#252540] rounded-xl px-3 py-2 shadow-lg">
+            <div className="text-[9px] text-[#6b6b8a] uppercase font-bold">Ruta al cliente</div>
+            <div className="text-sm font-black text-[#e8e8f4]">{routeInfo.duration} · {routeInfo.distance}</div>
+          </div>
+        )}
+        {isInTransit && destCoords && (
           <div className="absolute top-2 left-2 right-2 z-[1000]">
-            <TurnByTurn origin={coords} dest={getDestCoords()} />
+            <TurnByTurn origin={coords} dest={destCoords} />
           </div>
         )}
         {isInTransit && (
@@ -269,7 +288,7 @@ export function MessengerDelivery() {
              <h3 className="text-sm font-black text-[#e8e8f4] uppercase">{t('delivery.confirm')}</h3>
              <button onClick={() => setShowQr(true)} className="btn btn-ghost border-[#252540] text-xs w-full">{t('qr.scan')}</button>
              <div className="flex gap-3 items-center">
-                <button onClick={() => photoInputRef.current?.click()} className="btn btn-ghost border-[#252540] text-xs">Tomar Foto</button>
+                <button type="button" onClick={() => photoInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#252540] hover:border-[#5b8af9] bg-[#0b0b14] text-[#e8e8f4] text-xs font-bold transition-all cursor-pointer">Tomar Foto</button>
                 <input type="file" accept="image/*" capture="environment" ref={photoInputRef} className="hidden" onChange={handlePhoto} />
                 {uploadingProof && <span className="text-xs text-[#6b6b8a]">Subiendo…</span>}
                 {proofImgUrl && <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center text-green-500">✓</div>}

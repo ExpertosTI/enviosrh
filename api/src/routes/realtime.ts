@@ -129,6 +129,40 @@ realtime.post('/route/optimize', auth, async (c) => {
   }
 });
 
+// Ruta punto a punto (público — solo geometría OSRM)
+realtime.get('/route/directions', async (c) => {
+  const fromLat = Number(c.req.query('from_lat'));
+  const fromLng = Number(c.req.query('from_lng'));
+  const toLat = Number(c.req.query('to_lat'));
+  const toLng = Number(c.req.query('to_lng'));
+
+  if ([fromLat, fromLng, toLat, toLng].some(n => Number.isNaN(n))) {
+    return c.json({ error: 'from_lat, from_lng, to_lat, to_lng requeridos' }, 400);
+  }
+
+  try {
+    const res = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`,
+    );
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes?.[0]) {
+      return c.json({ error: 'No se pudo calcular la ruta' }, 502);
+    }
+    const route = data.routes[0];
+    const coordinates = route.geometry.coordinates.map(
+      (c: [number, number]) => [c[1], c[0]] as [number, number],
+    );
+    return c.json({
+      coordinates,
+      distance_km: Number((route.distance / 1000).toFixed(2)),
+      duration_sec: Math.round(route.duration),
+      duration_min: Math.round(route.duration / 60),
+    });
+  } catch {
+    return c.json({ error: 'Error al consultar ruta' }, 502);
+  }
+});
+
 function haversine(a: [number, number], b: [number, number]) {
   const R = 6371;
   const dLat = (b[0] - a[0]) * Math.PI / 180;

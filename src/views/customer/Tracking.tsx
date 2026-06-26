@@ -10,6 +10,9 @@ import { ChatPanel, type ChatMessage } from '../../components/ChatPanel';
 import { notifyProximity, resetProximityFlag, setupPushForDelivery } from '../../lib/push';
 import { OnboardingTour } from '../../components/OnboardingTour';
 import { useDeliveryWebSocket } from '../../lib/ws';
+import { parseLocationLink } from '../../lib/coords';
+import { useMapRoute } from '../../lib/useMapRoute';
+import { formatRouteDuration } from '../../lib/routing';
 import L from 'leaflet';
 
 interface PublicDelivery {
@@ -36,6 +39,8 @@ interface PublicDelivery {
   total_amount?: number;
   products?: string | null;
   at_destination_at?: string | null;
+  customer_latitude?: number | null;
+  customer_longitude?: number | null;
 }
 
 const STEPS: { state: DeliveryState; label: string; icon: React.ReactNode }[] = [
@@ -199,13 +204,46 @@ export function CustomerTracking() {
     });
   }
 
-  // Parsear coordenadas del cliente
-  const getDestinationCoords = (): [number, number] => {
-    if (delivery?.location_link) {
-      const match = delivery.location_link.match(/([-\d.]+),\s*([-\d.]+)/);
-      if (match) return [Number(match[1]), Number(match[2])];
+  // Destino: ubicación compartida del cliente o link del pedido
+  const destCoords = delivery
+    ? (delivery.customer_latitude != null && delivery.customer_longitude != null
+        ? [Number(delivery.customer_latitude), Number(delivery.customer_longitude)] as [number, number]
+        : parseLocationLink(delivery.location_link))
+    : null;
+
+  const messengerPos = delivery?.messenger_latitude != null && delivery?.messenger_longitude != null
+    ? [Number(delivery.messenger_latitude), Number(delivery.messenger_longitude)] as [number, number]
+    : null;
+
+  const routeActive = !!(
+    delivery?.pre_confirmed &&
+    messengerPos &&
+    destCoords &&
+    (delivery.state === 'in_transit' || delivery.state === 'assigned')
+  );
+
+  const liveRouteInfo = useMapRoute(
+    mapRef,
+    routePolylineRef,
+    messengerPos,
+    destCoords,
+    routeActive,
+    { color: '#5b8af9', fitBounds: true },
+  );
+
+  useEffect(() => {
+    if (liveRouteInfo) {
+      setRouteInfo({ distance: liveRouteInfo.distance, duration: liveRouteInfo.duration });
+      setEtaSeconds(liveRouteInfo.duration_sec);
+    } else if (!routeActive) {
+      setRouteInfo(null);
+      setEtaSeconds(null);
     }
-    return [18.4861, -69.9312]; // Default: Santo Domingo
+  }, [liveRouteInfo, routeActive]);
+
+  // Parsear coordenadas del cliente (legacy helper para marcador)
+  const getDestinationCoords = (): [number, number] => {
+    return destCoords ?? [18.4861, -69.9312];
   };
 
   // Inicializar Leaflet Map
@@ -355,76 +393,7 @@ export function CustomerTracking() {
     return () => clearInterval(timer);
   }, [etaSeconds]);
 
-  useEffect(() => {
-    if (routeInfo) {
-      const minutes = parseInt(routeInfo.duration);
-      if (!isNaN(minutes)) {
-        setEtaSeconds(minutes * 60);
-      }
-    } else {
-      setEtaSeconds(null);
-    }
-  }, [routeInfo]);
-
-  const formatETA = (totalSecs: number) => {
-    if (totalSecs <= 0) return "¡Llegando!";
-    const m = Math.floor(totalSecs / 60);
-    const s = totalSecs % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  // Actualizar ruta y tiempos (OSRM)
-  useEffect(() => {
-    if (!mapRef.current || !delivery || delivery.state !== 'in_transit' || !delivery.messenger_latitude || !delivery.messenger_longitude || !delivery.pre_confirmed) {
-      if (routePolylineRef.current && mapRef.current) {
-        mapRef.current.removeLayer(routePolylineRef.current);
-        routePolylineRef.current = null;
-      }
-      setRouteInfo(null);
-      return;
-    }
-
-    const mLat = Number(delivery.messenger_latitude);
-    const mLng = Number(delivery.messenger_longitude);
-    const dest = getDestinationCoords();
-
-    // Consultar API OSRM
-    const url = `https://router.project-osrm.org/route/v1/driving/${mLng},${mLat};${dest[1]},${dest[0]}?overview=full&geometries=geojson`;
-
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.code === 'Ok' && data.routes?.[0]) {
-          const route = data.routes[0];
-          const distanceKm = (route.distance / 1000).toFixed(1);
-          const durationMin = Math.round(route.duration / 60);
-
-          setRouteInfo({
-            distance: `${distanceKm} km`,
-            duration: `${durationMin} min`,
-          });
-
-          // Dibujar ruta
-          const coordinates = route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
-          
-          if (!mapRef.current) return;
-
-          if (!routePolylineRef.current) {
-            routePolylineRef.current = L.polyline(coordinates, {
-              color: '#5b8af9',
-              weight: 4,
-              opacity: 0.8,
-              dashArray: '5, 10'
-            }).addTo(mapRef.current);
-          } else {
-            routePolylineRef.current.setLatLngs(coordinates);
-          }
-        }
-      })
-      .catch((err) => {
-        console.warn('[Routing] Error:', err);
-      });
-  }, [delivery?.messenger_latitude, delivery?.messenger_longitude, delivery?.state, delivery?.pre_confirmed]);
+  const formatETA = (totalSecs: number) => formatRouteDuration(totalSecs);
 
   async function confirmOrderDetails() {
     if (!token) return;
@@ -601,12 +570,12 @@ export function CustomerTracking() {
             🎯 Mensajero en tu ubicación
           </div>
         )}
-        {routeInfo && (
+        {routeInfo && routeActive && (
           <div className="absolute top-3 left-3 z-[999] bg-white dark:bg-[#13131f] border border-slate-200 dark:border-[#252540] rounded-xl p-3 shadow-lg flex flex-col gap-1 transition-all">
-            <span className="text-[9px] text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider font-bold">Tiempo estimado</span>
+            <span className="text-[9px] text-slate-400 dark:text-[#6b6b8a] uppercase tracking-wider font-bold">Ruta en vivo</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-base font-black text-slate-800 dark:text-[#e8e8f4] animate-pulse">
-                {etaSeconds !== null ? formatETA(etaSeconds) : routeInfo.duration}
+                {etaSeconds !== null ? (etaSeconds <= 0 ? '¡Llegando!' : formatETA(etaSeconds)) : routeInfo.duration}
               </span>
               <span className="text-[10px] text-slate-500 dark:text-[#6b6b8a]">{routeInfo.distance}</span>
             </div>
