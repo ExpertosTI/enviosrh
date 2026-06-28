@@ -33,8 +33,8 @@ export const OPERATOR_STEPS: TourStep[] = [
   {
     id: 'route',
     title: 'Ruta inteligente',
-    subtitle: 'OSRM en tiempo real',
-    body: 'Cliente y mensajero ven la misma ruta con ETA en cuenta regresiva.',
+    subtitle: 'En tiempo real',
+    body: 'Cliente y mensajero comparten la misma ruta con tiempo estimado de llegada.',
     scene: 'map-route',
     placement: 'center',
     accent: '#5b8af9',

@@ -4,10 +4,11 @@ import { motion } from 'framer-motion';
 interface SpotlightProps {
   target?: string;
   active: boolean;
+  accent?: string;
   children: React.ReactNode;
 }
 
-export function Spotlight({ target, active, children }: SpotlightProps) {
+export function Spotlight({ target, active, accent = '#5b8af9', children }: SpotlightProps) {
   const maskId = useId().replace(/:/g, '');
   const [rect, setRect] = useState<DOMRect | null>(null);
 
@@ -78,16 +79,22 @@ export function Spotlight({ target, active, children }: SpotlightProps) {
             />
           </svg>
           <motion.div
-            className="absolute rounded-[14px] ring-2 ring-[#5b8af9] ring-offset-2 ring-offset-transparent pointer-events-none"
-            style={{ left: hole.x, top: hole.y, width: hole.w, height: hole.h }}
-            animate={{ boxShadow: ['0 0 0 0 rgba(91,138,249,0.5)', '0 0 0 12px rgba(91,138,249,0)', '0 0 0 0 rgba(91,138,249,0.5)'] }}
+            className="absolute rounded-[14px] pointer-events-none"
+            style={{
+              left: hole.x,
+              top: hole.y,
+              width: hole.w,
+              height: hole.h,
+              boxShadow: `0 0 0 2px ${accent}, 0 0 32px ${accent}66`,
+            }}
+            animate={{ boxShadow: [`0 0 0 2px ${accent}, 0 0 24px ${accent}55`, `0 0 0 2px ${accent}, 0 0 48px ${accent}88`, `0 0 0 2px ${accent}, 0 0 24px ${accent}55`] }}
             transition={{ repeat: Infinity, duration: 2 }}
           />
         </motion.div>
       )}
       {active && !hole && (
         <motion.div
-          className="fixed inset-0 z-[1998] bg-black/80 backdrop-blur-sm"
+          className="fixed inset-0 z-[1998] onboarding-backdrop"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         />

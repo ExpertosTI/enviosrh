@@ -1,84 +1,65 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { APP_RELEASE, RELEASE_NOTES, storageKey } from '../lib/releaseNotes';
+import { useSearchParams } from 'react-router-dom';
+import {
+  APP_RELEASE,
+  RELEASE_NOTES,
+  resetOnboarding,
+  storageKey,
+} from '../lib/releaseNotes';
 import { stepsForRole } from './onboarding/steps';
 import { Spotlight } from './onboarding/Spotlight';
 import { TourScene } from './onboarding/scenes';
 import { AiNarration } from './onboarding/Typewriter';
+import { PremiumTourShell } from './onboarding/PremiumTourShell';
 import type { TourStep } from './onboarding/types';
 
-type Mode = 'welcome' | 'update' | null;
+function buildSteps(role: 'operator' | 'messenger' | 'customer', includeWhatsNew: boolean): TourStep[] {
+  const base = stepsForRole(role);
+  const release = RELEASE_NOTES[APP_RELEASE];
+  if (!includeWhatsNew || !release) return base;
 
-function UpdateCarousel({ highlights, accent }: { highlights: string[]; accent: string }) {
-  const [idx, setIdx] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setIdx(i => (i + 1) % highlights.length), 2800);
-    return () => clearInterval(t);
-  }, [highlights.length]);
-
-  return (
-    <div className="w-full">
-      <div className="flex gap-1.5 mb-3 justify-center">
-        {highlights.map((_, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setIdx(i)}
-            className="h-1 rounded-full border-0 cursor-pointer transition-all"
-            style={{
-              width: i === idx ? 24 : 8,
-              background: i === idx ? accent : '#252540',
-            }}
-            aria-label={`Novedad ${i + 1}`}
-          />
-        ))}
-      </div>
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={idx}
-          initial={{ opacity: 0, x: 24 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -24 }}
-          transition={{ duration: 0.25 }}
-          className="p-4 rounded-xl onboarding-update-card text-center min-h-[72px] flex items-center justify-center"
-        >
-          <p className="text-sm font-semibold onboarding-text-primary leading-snug">{highlights[idx]}</p>
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  );
+  return [
+    {
+      id: 'whats-new',
+      title: release.title,
+      subtitle: `Novedades · v${APP_RELEASE}`,
+      body: release.tagline,
+      scene: 'whats-new',
+      placement: 'center',
+      accent: '#5b8af9',
+    },
+    ...base,
+  ];
 }
 
 function cardPosition(target?: string, placement?: string) {
   if (!target || placement === 'center') {
-    return { className: 'fixed inset-0 z-[2000] flex items-center justify-center p-4 pointer-events-none' };
+    return { className: 'onboarding-spotlight-dock' };
   }
   const el = document.querySelector(target);
-  if (!el) return { className: 'fixed inset-0 z-[2000] flex items-center justify-center p-4 pointer-events-none' };
+  if (!el) return { className: 'onboarding-spotlight-dock' };
   const r = el.getBoundingClientRect();
-  const cardW = 320;
+  const cardW = Math.min(380, window.innerWidth - 32);
   if (placement === 'right') {
     const left = Math.min(r.right + 16, window.innerWidth - cardW - 16);
-    const top = Math.max(16, Math.min(r.top, window.innerHeight - 400));
-    return { style: { position: 'fixed' as const, left, top, zIndex: 2000, width: cardW } };
+    const top = Math.max(16, Math.min(r.top, window.innerHeight - 420));
+    return { style: { position: 'fixed' as const, left, top, zIndex: 2001, width: cardW } };
   }
-  return { className: 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[2000] w-full max-w-sm px-4 pointer-events-none' };
+  return { className: 'onboarding-spotlight-dock' };
 }
 
 export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'customer' }) {
-  const [mode, setMode] = useState<Mode>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [active, setActive] = useState(false);
   const [step, setStep] = useState(0);
   const [posKey, setPosKey] = useState(0);
+  const [withNews, setWithNews] = useState(false);
 
-  const welcomeSteps = useMemo(() => stepsForRole(role), [role]);
-  const release = RELEASE_NOTES[APP_RELEASE];
-  const updateStepCount = release ? 1 : 0;
-
-  const steps = mode === 'update' ? [] : welcomeSteps;
-  const isUpdate = mode === 'update';
-  const totalSteps = isUpdate ? updateStepCount : steps.length;
-  const current: TourStep | null = !isUpdate && steps[step] ? steps[step] : null;
+  const steps = useMemo(() => buildSteps(role, withNews), [role, withNews]);
+  const current = steps[step] ?? null;
   const accent = current?.accent ?? '#5b8af9';
+  const hasTarget = !!current?.target && current.placement !== 'center';
+  const isFullscreen = !hasTarget;
 
   useEffect(() => {
     const welcomeKey = storageKey(role, 'welcome');
@@ -86,35 +67,54 @@ export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'cus
     const legacy = localStorage.getItem(`enviosrh_onboarding_${role}`);
     if (legacy && !localStorage.getItem(welcomeKey)) localStorage.setItem(welcomeKey, '1');
 
+    if (searchParams.get('tour') === 'reset') {
+      resetOnboarding(role);
+      const next = new URLSearchParams(searchParams);
+      next.delete('tour');
+      setSearchParams(next, { replace: true });
+      setWithNews(false);
+      setStep(0);
+      setActive(true);
+      return;
+    }
+
     const seenWelcome = localStorage.getItem(welcomeKey);
     const seenRelease = localStorage.getItem(releaseKey);
 
-    if (!seenWelcome && welcomeSteps.length) {
-      setMode('welcome');
+    if (!seenWelcome) {
+      setWithNews(false);
       setStep(0);
-    } else if (seenRelease !== APP_RELEASE && release) {
-      setMode('update');
+      setActive(true);
+    } else if (seenRelease !== APP_RELEASE) {
+      setWithNews(true);
       setStep(0);
+      setActive(true);
     }
-  }, [role, welcomeSteps.length, release]);
+  }, [role, searchParams, setSearchParams]);
 
   const finish = useCallback(() => {
-    if (mode === 'welcome') localStorage.setItem(storageKey(role, 'welcome'), '1');
+    localStorage.setItem(storageKey(role, 'welcome'), '1');
     localStorage.setItem(storageKey(role, 'release'), APP_RELEASE);
-    setMode(null);
-  }, [mode, role]);
+    setActive(false);
+  }, [role]);
 
   const next = useCallback(() => {
-    if (step + 1 >= totalSteps) finish();
-    else { setStep(s => s + 1); setPosKey(k => k + 1); }
-  }, [step, totalSteps, finish]);
+    if (step + 1 >= steps.length) finish();
+    else {
+      setStep(s => s + 1);
+      setPosKey(k => k + 1);
+    }
+  }, [step, steps.length, finish]);
 
   const prev = useCallback(() => {
-    if (step > 0) { setStep(s => s - 1); setPosKey(k => k + 1); }
+    if (step > 0) {
+      setStep(s => s - 1);
+      setPosKey(k => k + 1);
+    }
   }, [step]);
 
   useEffect(() => {
-    if (!mode) return;
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') finish();
       if (e.key === 'ArrowRight' || e.key === 'Enter') next();
@@ -122,129 +122,57 @@ export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'cus
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mode, next, prev, finish]);
+  }, [active, next, prev, finish]);
 
-  if (!mode) return null;
+  if (!active || !current) return null;
 
-  const progress = ((step + 1) / totalSteps) * 100;
-  const hasTarget = !!current?.target && current.placement !== 'center';
-  const pos = hasTarget ? cardPosition(current?.target, current?.placement) : { className: 'fixed inset-0 z-[2000] flex items-end sm:items-center justify-center p-4 sm:p-6 pointer-events-none' };
+  const progress = ((step + 1) / steps.length) * 100;
+  const pos = hasTarget ? cardPosition(current.target, current.placement) : null;
 
-  const card = (
-    <motion.div
-      key={`${mode}-${step}-${posKey}`}
-      initial={{ opacity: 0, y: 24, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -12, scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-      className="pointer-events-auto w-full max-w-sm"
-      style={'style' in pos ? pos.style : undefined}
+  const panel = (
+    <PremiumTourShell
+      key={`${step}-${posKey}`}
+      step={step}
+      total={steps.length}
+      progress={progress}
+      accent={accent}
+      isFullscreen={isFullscreen}
+      onSkip={finish}
+      onNext={next}
+      onPrev={prev}
+      isLast={step + 1 >= steps.length}
+      docked={'style' in (pos ?? {})}
     >
-      <div className="onboarding-card rounded-2xl overflow-hidden">
-        {/* Progress */}
-        <div className="onboarding-progress-track">
-          <motion.div
-            className="onboarding-progress-fill"
-            style={{ background: `linear-gradient(90deg, ${accent}, #ffffff88)` }}
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.35 }}
-          />
-        </div>
-
-        <div className="p-5 flex flex-col gap-4">
-          {isUpdate ? (
-            <>
-              <div className="flex items-center gap-2">
-                <motion.span
-                  animate={{ rotate: [0, 10, -10, 0] }}
-                  transition={{ repeat: Infinity, duration: 2 }}
-                  className="text-2xl"
-                >
-                  ✨
-                </motion.span>
-                <div>
-                  <p className="onboarding-subtitle" style={{ color: accent, marginBottom: 2 }}>Versión {APP_RELEASE}</p>
-                  <h2 className="onboarding-title text-lg">{release?.title}</h2>
-                </div>
-              </div>
-              {release && <UpdateCarousel highlights={release.highlights} accent={accent} />}
-              <p className="onboarding-hint text-center">Desliza o usa las flechas del teclado ← →</p>
-            </>
-          ) : current && (
-            <>
-              <TourScene scene={current.scene} accent={accent} role={role} />
-              <AiNarration
-                subtitle={current.subtitle}
-                title={current.title}
-                body={current.body}
-                accent={accent}
-                stepKey={`${mode}-${step}`}
-              />
-              {current.target && (
-                <motion.p
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{ repeat: Infinity, duration: 1.5 }}
-                  className="onboarding-spotlight-hint"
-                  style={{ color: accent }}
-                >
-                  ↑ Elemento resaltado en pantalla
-                </motion.p>
-              )}
-            </>
-          )}
-
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={finish}
-              className="onboarding-btn-ghost"
-            >
-              Omitir
-            </button>
-            <div className="flex-1 flex justify-center gap-1">
-              {Array.from({ length: totalSteps }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-1.5 rounded-full transition-all"
-                  style={{
-                    width: i === step ? 16 : 6,
-                    background: i <= step ? accent : '#333344',
-                  }}
-                />
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={next}
-              className="onboarding-btn-next"
-              style={{ background: accent, boxShadow: `0 8px 28px ${accent}55` }}
-            >
-              {step + 1 >= totalSteps ? '¡Empezar!' : 'Siguiente'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </motion.div>
+      <TourScene scene={current.scene} accent={accent} role={role} />
+      <AiNarration
+        subtitle={current.subtitle}
+        title={current.title}
+        body={current.body}
+        accent={accent}
+        stepKey={`${step}-${current.id}`}
+      />
+      {current.target && (
+        <p className="onboarding-spotlight-hint" style={{ color: accent }}>
+          ↑ Mira el elemento resaltado en pantalla
+        </p>
+      )}
+    </PremiumTourShell>
   );
 
   return (
-    <Spotlight target={current?.target} active={!!mode && hasTarget}>
+    <Spotlight target={current.target} active accent={accent}>
       <div role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-        {!hasTarget && (
-          <motion.div
-            className="fixed inset-0 z-[1999] bg-black/70 backdrop-blur-md"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          />
+        {isFullscreen ? (
+          <div className="onboarding-fullscreen">{panel}</div>
+        ) : (
+          <>
+            {pos && 'style' in pos ? (
+              <div style={pos.style}>{panel}</div>
+            ) : (
+              <div className={pos?.className ?? 'onboarding-spotlight-dock'}>{panel}</div>
+            )}
+          </>
         )}
-        <AnimatePresence mode="wait">
-          {'className' in pos && pos.className ? (
-            <div className={pos.className}>{card}</div>
-          ) : (
-            card
-          )}
-        </AnimatePresence>
       </div>
     </Spotlight>
   );

@@ -1,8 +1,56 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { APP_RELEASE, RELEASE_NOTES } from '../../lib/releaseNotes';
 import type { SceneId } from './types';
 
-/* ── Uber-style dark map with animated route ── */
+function WhatsNewScene({ accent }: { accent: string }) {
+  const release = RELEASE_NOTES[APP_RELEASE];
+  const items = release?.highlights ?? [];
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setIdx(i => (i + 1) % items.length), 2400);
+    return () => clearInterval(t);
+  }, [items.length]);
+
+  if (!items.length) return null;
+
+  return (
+    <div className="onboarding-scene onboarding-scene-whatsnew">
+      <motion.div
+        className="onboarding-whatsnew-badge"
+        style={{ borderColor: `${accent}55`, color: accent }}
+        animate={{ scale: [1, 1.04, 1] }}
+        transition={{ repeat: Infinity, duration: 2.5 }}
+      >
+        v{APP_RELEASE}
+      </motion.div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={idx}
+          initial={{ opacity: 0, y: 20, scale: 0.92 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -16, scale: 0.95 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+          className="onboarding-whatsnew-card"
+        >
+          <span className="onboarding-whatsnew-icon">{items[idx].icon}</span>
+          <p className="onboarding-whatsnew-text">{items[idx].text}</p>
+        </motion.div>
+      </AnimatePresence>
+      <div className="onboarding-whatsnew-dots">
+        {items.map((_, i) => (
+          <div
+            key={i}
+            className="onboarding-whatsnew-dot"
+            style={{ width: i === idx ? 20 : 6, background: i === idx ? accent : '#333' }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MapRouteScene({ accent }: { accent: string }) {
   const route = 'M 36 118 C 52 118, 58 88, 78 82 S 118 58, 142 62 S 188 38, 218 48 S 248 28, 262 32';
 
@@ -365,6 +413,7 @@ function LiveMapScene() {
 
 export function TourScene({ scene, accent, role }: { scene: SceneId; accent: string; role?: string }) {
   switch (scene) {
+    case 'whats-new': return <WhatsNewScene accent={accent} />;
     case 'map-route': return <MapRouteScene accent={accent} />;
     case 'chat': return <ChatScene />;
     case 'gps': return <GpsScene />;

@@ -1,47 +1,66 @@
 /** Incrementar en cada release con novedades visibles para el usuario */
-export const APP_RELEASE = '3.2.1';
+export const APP_RELEASE = '3.3.0';
+
+export interface ReleaseHighlight {
+  icon: string;
+  text: string;
+}
 
 export interface ReleaseNote {
   title: string;
-  highlights: string[];
+  tagline: string;
+  highlights: ReleaseHighlight[];
 }
 
 export const RELEASE_NOTES: Record<string, ReleaseNote> = {
-  '3.2.1': {
-    title: 'Tour con IA y mapa estilo Uber',
+  '3.3.0': {
+    title: 'Tu app, reinventada',
+    tagline: 'Más elegante, más rápida, más inteligente',
     highlights: [
-      'Texto blanco legible + efecto de escritura tipo asistente IA',
-      'Mapa oscuro con ruta animada y vehículo en movimiento',
-      'Mini teléfono con tracking en vivo en cada paso',
+      { icon: '🗺️', text: 'Mapa en vivo con rutas animadas' },
+      { icon: '🤖', text: 'Guía inteligente paso a paso' },
+      { icon: '💬', text: 'Chat y notificaciones al instante' },
+    ],
+  },
+  '3.2.1': {
+    title: 'Mejoras de experiencia',
+    tagline: 'Interfaz más clara y fluida',
+    highlights: [
+      { icon: '✨', text: 'Diseño renovado en todo el recorrido' },
+      { icon: '📍', text: 'Seguimiento en mapa más preciso' },
+      { icon: '⚡', text: 'Navegación más rápida' },
     ],
   },
   '3.2.0': {
-    title: 'Onboarding interactivo',
+    title: 'Tour interactivo',
+    tagline: 'Aprende la app en segundos',
     highlights: [
-      'Tour animado con spotlight en menús clave',
-      'Mini demos: mapa, chat, GPS y calificación',
-      'Anuncio automático en cada actualización',
+      { icon: '🎯', text: 'Te guiamos por cada función clave' },
+      { icon: '🛵', text: 'Demos en vivo de mapa y chat' },
+      { icon: '🔔', text: 'Avisos de cada actualización' },
     ],
   },
   '3.1.0': {
-    title: 'Ruta en vivo y mejoras',
+    title: 'Ruta en vivo',
+    tagline: 'Cliente y mensajero conectados',
     highlights: [
-      'Ruta trazada en el mapa entre mensajero y cliente',
-      'ETA en cuenta regresiva mientras el repartidor se acerca',
-      'Mapa en vivo para operadores',
-      'Push, geofencing y chat en tiempo real',
-    ],
-  },
-  '3.0.0': {
-    title: 'Gran actualización 2026',
-    highlights: [
-      'Chat con indicador de escritura y confirmación de lectura',
-      'Modo offline, QR y navegación paso a paso',
-      'Zonas de cobertura y auto-asignación inteligente',
+      { icon: '📍', text: 'Ruta trazada entre mensajero y cliente' },
+      { icon: '⏱️', text: 'ETA en cuenta regresiva' },
+      { icon: '🗺️', text: 'Mapa en vivo para operadores' },
     ],
   },
 };
 
 export function storageKey(role: string, kind: 'release' | 'welcome') {
   return kind === 'release' ? `enviosrh_release_${role}` : `enviosrh_welcome_${role}`;
+}
+
+/** Limpia estado del tour. Usar con ?tour=reset en la URL o desde consola del navegador. */
+export function resetOnboarding(role?: string) {
+  const roles = role ? [role] : ['operator', 'messenger', 'customer'];
+  for (const r of roles) {
+    localStorage.removeItem(storageKey(r, 'welcome'));
+    localStorage.removeItem(storageKey(r, 'release'));
+    localStorage.removeItem(`enviosrh_onboarding_${r}`);
+  }
 }

@@ -6,7 +6,7 @@ export type SceneId =
   | 'chat'
   | 'delivery-proof'
   | 'rating'
-  | 'update-carousel'
+  | 'whats-new'
   | 'complete';
 
 export interface TourStep {
@@ -15,7 +15,6 @@ export interface TourStep {
   subtitle?: string;
   body: string;
   scene: SceneId;
-  /** Selector CSS para spotlight (opcional) */
   target?: string;
   placement?: 'top' | 'bottom' | 'left' | 'right' | 'center';
   accent?: string;
