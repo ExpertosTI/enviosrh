@@ -1,5 +1,5 @@
 /** Incrementar en cada release con novedades visibles para el usuario */
-export const APP_RELEASE = '3.3.0';
+export const APP_RELEASE = '3.4.0';
 
 export interface ReleaseHighlight {
   icon: string;
@@ -13,6 +13,15 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: Record<string, ReleaseNote> = {
+  '3.4.0': {
+    title: 'Renace AI integrado',
+    tagline: 'Tu copiloto inteligente para envíos y operaciones',
+    highlights: [
+      { icon: '🤖', text: 'Asistente IA con Google Gemini u OpenAI' },
+      { icon: '📊', text: 'Consulta envíos, mensajeros y facturación en vivo' },
+      { icon: '⚙️', text: 'Configura tus API keys en Panel Admin' },
+    ],
+  },
   '3.3.0': {
     title: 'Tu app, reinventada',
     tagline: 'Más elegante, más rápida, más inteligente',

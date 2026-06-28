@@ -23,6 +23,7 @@ import billingRoutes from './routes/billing.js';
 import assignRulesRoutes from './routes/assignRules.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import liveRoutes from './routes/live.js';
+import aiRoutes from './routes/ai.js';
 import { registerWsRoutes } from './routes/ws.js';
 import { captureException } from './lib/observability.js';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -119,9 +120,10 @@ app.use('*', async (c, next) => {
   if (c.req.path.startsWith('/upload')) {
     return next();
   }
+  const maxSize = c.req.path.startsWith('/ai/') ? 4 * 1024 * 1024 : 2 * 1024 * 1024;
   return bodyLimit({
-    maxSize: 2 * 1024 * 1024,
-    onError: (c) => c.json({ error: 'Tamaño de solicitud excedido (máximo 2MB)' }, 413)
+    maxSize,
+    onError: (c) => c.json({ error: 'Tamaño de solicitud excedido' }, 413)
   })(c, next);
 });
 
@@ -179,6 +181,7 @@ app.route('/billing', billingRoutes);
 app.route('/assign-rules', assignRulesRoutes);
 app.route('/whatsapp', whatsappRoutes);
 app.route('/live', liveRoutes);
+app.route('/ai', aiRoutes);
 
 // Rutas públicas de portal (sin prefijo /api, token en URL)
 app.route('/p', portalRoutes);

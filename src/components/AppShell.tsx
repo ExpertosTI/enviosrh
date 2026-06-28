@@ -6,6 +6,7 @@ import {
   IconPackage, IconPlus, IconLogout, IconUser, IconMotorbike,
 } from './Icons';
 import { ThemeToggle } from './ThemeToggle';
+import { AiAssistant } from './AiAssistant';
 import { useI18n } from '../lib/i18n';
 
 interface NavItem {
@@ -413,6 +414,9 @@ export function AppShell({ children, nav }: AppShellProps) {
             </div>
           </div>
         </div>
+      )}
+      {currentUser && (currentUser.role === 'operator' || currentUser.role === 'messenger') && (
+        <AiAssistant />
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { AppShell, PageHeader } from '../../components/AppShell';
 import { TenantSettings } from './TenantSettings';
 import { AssignRulesSettings } from '../../components/AssignRulesSettings';
 import { BillingPanel } from '../../components/BillingPanel';
+import { AiSettings } from '../../components/AiSettings';
 import { getSession } from '../../lib/auth';
 import { IconUser } from '../../components/Icons';
 import L from 'leaflet';
@@ -713,6 +714,7 @@ export function AdminPanel() {
               {/* ── Configuración de Marca ── */}
               {tab === 'settings' && (
                 <div className="p-4 md:p-6 bg-slate-50 dark:bg-[#0b0b14]/30 flex flex-col gap-2">
+                  <AiSettings />
                   <BillingPanel />
                   <AssignRulesSettings />
                   <TenantSettings />
