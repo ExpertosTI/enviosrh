@@ -2,39 +2,111 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { SceneId } from './types';
 
+/* ── Uber-style dark map with animated route ── */
 function MapRouteScene({ accent }: { accent: string }) {
+  const route = 'M 36 118 C 52 118, 58 88, 78 82 S 118 58, 142 62 S 188 38, 218 48 S 248 28, 262 32';
+
   return (
-    <div className="relative w-full h-36 rounded-xl overflow-hidden bg-[#0b0b14] border border-[#252540]">
-      <div className="absolute inset-0 opacity-30" style={{
-        backgroundImage: 'linear-gradient(#252540 1px, transparent 1px), linear-gradient(90deg, #252540 1px, transparent 1px)',
-        backgroundSize: '20px 20px',
-      }} />
-      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 280 144" preserveAspectRatio="none">
+    <div className="onboarding-scene onboarding-scene-map">
+      <svg className="onboarding-map-svg" viewBox="0 0 300 150" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <linearGradient id="mapFade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#14141c" />
+            <stop offset="100%" stopColor="#0a0a0f" />
+          </linearGradient>
+          <filter id="routeGlow">
+            <feGaussianBlur stdDeviation="2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        <rect width="300" height="150" fill="url(#mapFade)" />
+
+        {/* Streets — Uber-like grid */}
+        {[30, 60, 90, 120].map(y => (
+          <line key={`h${y}`} x1="0" y1={y} x2="300" y2={y} stroke="#2a2a36" strokeWidth={y % 60 === 0 ? 2.5 : 1} opacity={0.7} />
+        ))}
+        {[40, 100, 160, 220, 260].map(x => (
+          <line key={`v${x}`} x1={x} y1="0" x2={x} y2="150" stroke="#2a2a36" strokeWidth={x % 120 === 40 ? 2.5 : 1} opacity={0.7} />
+        ))}
+
+        {/* Route shadow */}
         <motion.path
-          d="M 30 110 Q 80 40, 140 70 T 250 35"
+          d={route}
+          fill="none"
+          stroke="#000"
+          strokeWidth="8"
+          strokeLinecap="round"
+          opacity={0.35}
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 2, ease: 'easeInOut' }}
+        />
+
+        {/* Main route */}
+        <motion.path
+          d={route}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="4.5"
+          strokeLinecap="round"
+          filter="url(#routeGlow)"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 2, ease: 'easeInOut', repeat: Infinity, repeatDelay: 1.2 }}
+        />
+
+        {/* Accent highlight on route */}
+        <motion.path
+          d={route}
           fill="none"
           stroke={accent}
-          strokeWidth="4"
+          strokeWidth="2"
           strokeLinecap="round"
-          strokeDasharray="8 6"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 1.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 0.5 }}
+          strokeDasharray="6 10"
+          initial={{ pathLength: 0, opacity: 0.8 }}
+          animate={{ pathLength: 1, opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 2, ease: 'easeInOut', repeat: Infinity, repeatDelay: 1.2 }}
         />
+
+        {/* Pickup pin */}
+        <circle cx="36" cy="118" r="7" fill="#22c55e" stroke="#fff" strokeWidth="2" />
+        <circle cx="36" cy="118" r="14" fill="none" stroke="#22c55e" strokeWidth="1.5" opacity="0.4">
+          <animate attributeName="r" values="10;18;10" dur="2s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite" />
+        </circle>
+
+        {/* Destination square (Uber style) */}
+        <rect x="254" y="24" width="14" height="14" rx="2" fill="#0a0a0f" stroke="#fff" strokeWidth="2.5" />
       </svg>
+
+      {/* Vehicle along route */}
       <motion.div
-        className="absolute"
-        style={{ left: '8%', top: '72%' }}
-        animate={{ left: ['8%', '45%', '88%'], top: ['72%', '35%', '18%'] }}
-        transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+        className="onboarding-vehicle"
+        animate={{ offsetDistance: ['0%', '100%'] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: 'linear', repeatDelay: 0.6 }}
+        style={{ offsetPath: `path('${route}')` }}
       >
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm" style={{ background: `${accent}33`, border: `2px solid ${accent}` }}>
-          🛵
-        </div>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <rect x="4" y="8" width="16" height="10" rx="3" fill="#111" stroke="#fff" strokeWidth="1.5" />
+          <circle cx="8" cy="18" r="2.5" fill="#333" stroke="#aaa" strokeWidth="1" />
+          <circle cx="16" cy="18" r="2.5" fill="#333" stroke="#aaa" strokeWidth="1" />
+          <path d="M7 8 L9 4 H15 L17 8" stroke="#fff" strokeWidth="1.5" fill="#222" />
+        </svg>
       </motion.div>
-      <div className="absolute right-3 top-3 w-3 h-3 rounded-full bg-[#ef4444] ring-4 ring-[#ef4444]/30" />
-      <div className="absolute left-3 bottom-2 px-2 py-0.5 rounded-md bg-[#13131f]/90 text-[9px] font-bold text-[#e8e8f4]">
-        ETA <motion.span animate={{ opacity: [1, 0.4, 1] }} transition={{ repeat: Infinity, duration: 1.2 }}>4:32</motion.span>
+
+      <div className="onboarding-eta-pill">
+        <span className="onboarding-eta-dot" style={{ background: accent }} />
+        <span>ETA</span>
+        <motion.strong
+          animate={{ opacity: [1, 0.35, 1] }}
+          transition={{ repeat: Infinity, duration: 1.4 }}
+        >
+          4:32
+        </motion.strong>
       </div>
     </div>
   );
@@ -48,32 +120,28 @@ function ChatScene() {
   ];
   const [visible, setVisible] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setVisible(v => (v < msgs.length ? v + 1 : 0)), 1400);
+    const t = setInterval(() => setVisible(v => (v < msgs.length ? v + 1 : 0)), 1600);
     return () => clearInterval(t);
   }, []);
 
   return (
-    <div className="w-full h-36 rounded-xl bg-[#0b0b14] border border-[#252540] p-3 flex flex-col gap-2 overflow-hidden">
+    <div className="onboarding-scene onboarding-scene-chat">
       <AnimatePresence mode="popLayout">
         {msgs.slice(0, visible).map((m, i) => (
           <motion.div
             key={`${m.from}-${i}`}
-            initial={{ opacity: 0, y: 12, scale: 0.9 }}
+            initial={{ opacity: 0, y: 14, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className={`max-w-[75%] px-2.5 py-1.5 rounded-xl text-[10px] font-medium ${
-              m.from === 'messenger'
-                ? 'self-start bg-[#252540] text-[#e8e8f4] rounded-tl-sm'
-                : 'self-end bg-[#5b8af9] text-white rounded-tr-sm'
-            }`}
+            className={`onboarding-chat-bubble ${m.from === 'messenger' ? 'is-in' : 'is-out'}`}
           >
             {m.text}
           </motion.div>
         ))}
       </AnimatePresence>
       {visible > 0 && visible < msgs.length && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="self-start text-[9px] text-[#6b6b8a] flex gap-1">
-          <span className="animate-bounce">●</span><span className="animate-bounce" style={{ animationDelay: '0.1s' }}>●</span><span className="animate-bounce" style={{ animationDelay: '0.2s' }}>●</span>
-          escribiendo…
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="onboarding-typing">
+          <span /><span /><span />
+          IA transcribiendo…
         </motion.div>
       )}
     </div>
@@ -82,49 +150,56 @@ function ChatScene() {
 
 function GpsScene() {
   return (
-    <div className="relative w-full h-36 rounded-xl bg-[#0b0b14] border border-[#252540] flex items-center justify-center overflow-hidden">
+    <div className="onboarding-scene onboarding-scene-gps">
       {[0, 1, 2].map(i => (
         <motion.div
           key={i}
-          className="absolute w-20 h-20 rounded-full border-2 border-[#22c55e]"
-          initial={{ scale: 0.5, opacity: 0.8 }}
-          animate={{ scale: 2.5, opacity: 0 }}
-          transition={{ duration: 2, repeat: Infinity, delay: i * 0.6, ease: 'easeOut' }}
+          className="onboarding-gps-ring"
+          initial={{ scale: 0.4, opacity: 0.9 }}
+          animate={{ scale: 2.8, opacity: 0 }}
+          transition={{ duration: 2.2, repeat: Infinity, delay: i * 0.65, ease: 'easeOut' }}
         />
       ))}
       <motion.div
-        animate={{ scale: [1, 1.08, 1] }}
-        transition={{ repeat: Infinity, duration: 1.5 }}
-        className="relative z-10 w-14 h-14 rounded-full bg-[#22c55e]/20 border-2 border-[#22c55e] flex items-center justify-center text-2xl"
+        animate={{ scale: [1, 1.1, 1] }}
+        transition={{ repeat: Infinity, duration: 1.6 }}
+        className="onboarding-gps-core"
       >
-        📍
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#22c55e" />
+          <circle cx="12" cy="9" r="2.5" fill="#fff" />
+        </svg>
       </motion.div>
-      <div className="absolute bottom-2 text-[9px] font-bold text-[#22c55e] uppercase tracking-wider">GPS Activo</div>
+      <p className="onboarding-gps-label">GPS activo · precisión 8m</p>
     </div>
   );
 }
 
 function ProofScene() {
-  const items = ['📷 Foto', '📱 QR', '✍️ Firma'];
+  const items = [
+    { icon: '📷', label: 'Foto' },
+    { icon: '📱', label: 'QR' },
+    { icon: '✍️', label: 'Firma' },
+  ];
   return (
-    <div className="w-full h-36 rounded-xl bg-[#0b0b14] border border-[#252540] p-3 flex gap-2">
-      {items.map((label, i) => (
+    <div className="onboarding-scene onboarding-scene-proof">
+      {items.map((item, i) => (
         <motion.div
-          key={label}
-          initial={{ opacity: 0, y: 20 }}
+          key={item.label}
+          initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.2 }}
-          whileHover={{ scale: 1.05 }}
-          className="flex-1 rounded-lg bg-[#13131f] border border-[#252540] flex flex-col items-center justify-center gap-1 cursor-default"
+          transition={{ delay: i * 0.18, type: 'spring', stiffness: 280 }}
+          whileHover={{ scale: 1.06, y: -4 }}
+          className="onboarding-proof-tile"
         >
           <motion.span
-            animate={{ scale: [1, 1.15, 1] }}
-            transition={{ repeat: Infinity, duration: 2, delay: i * 0.3 }}
-            className="text-xl"
+            animate={{ y: [0, -4, 0] }}
+            transition={{ repeat: Infinity, duration: 2.2, delay: i * 0.25 }}
+            className="text-2xl"
           >
-            {label.split(' ')[0]}
+            {item.icon}
           </motion.span>
-          <span className="text-[8px] font-bold text-[#6b6b8a]">{label.split(' ')[1]}</span>
+          <span>{item.label}</span>
         </motion.div>
       ))}
     </div>
@@ -135,23 +210,25 @@ function RatingScene({ accent }: { accent: string }) {
   const [hover, setHover] = useState(0);
   const [picked, setPicked] = useState(0);
   return (
-    <div className="w-full h-36 rounded-xl bg-[#0b0b14] border border-[#252540] flex flex-col items-center justify-center gap-3">
-      <p className="text-[10px] text-[#6b6b8a] font-bold uppercase tracking-wider">Toca para probar</p>
+    <div className="onboarding-scene onboarding-scene-rating">
+      <p className="onboarding-rating-hint">Toca para probar</p>
       <div className="flex gap-2">
         {[1, 2, 3, 4, 5].map(star => (
           <motion.button
             key={star}
             type="button"
-            whileTap={{ scale: 0.85 }}
+            whileTap={{ scale: 0.82 }}
             onMouseEnter={() => setHover(star)}
             onMouseLeave={() => setHover(0)}
             onClick={() => setPicked(star)}
-            className="text-2xl bg-transparent border-0 cursor-pointer p-0"
+            className="onboarding-star-btn"
             aria-label={`${star} estrellas`}
           >
             <motion.span
-              animate={{ scale: (hover || picked) >= star ? 1.2 : 1 }}
-              style={{ filter: (hover || picked) >= star ? 'none' : 'grayscale(1) opacity(0.35)' }}
+              animate={{
+                scale: (hover || picked) >= star ? 1.25 : 1,
+                filter: (hover || picked) >= star ? 'drop-shadow(0 0 8px #fbbf24)' : 'grayscale(1) opacity(0.3)',
+              }}
             >
               ⭐
             </motion.span>
@@ -161,10 +238,10 @@ function RatingScene({ accent }: { accent: string }) {
       <AnimatePresence>
         {picked > 0 && (
           <motion.p
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="text-xs font-bold"
+            className="onboarding-rating-done"
             style={{ color: accent }}
           >
             ¡{picked} estrella{picked > 1 ? 's' : ''}! Gracias 🎉
@@ -176,56 +253,82 @@ function RatingScene({ accent }: { accent: string }) {
 }
 
 function HeroScene({ accent, role }: { accent: string; role?: string }) {
-  const emoji = role === 'operator' ? '📦' : role === 'messenger' ? '🛵' : '📍';
+  const label = role === 'operator' ? 'Nuevo envío' : role === 'messenger' ? 'En ruta' : 'Tu pedido';
+
   return (
-    <div className="relative w-full h-36 rounded-xl overflow-hidden flex items-center justify-center"
-      style={{ background: `linear-gradient(135deg, ${accent}22 0%, #0b0b14 60%, ${accent}11 100%)`, border: `1px solid ${accent}44` }}
-    >
+    <div className="onboarding-scene onboarding-scene-hero">
+      <div className="onboarding-phone">
+        <div className="onboarding-phone-notch" />
+        <div className="onboarding-phone-screen">
+          <div className="onboarding-phone-header">
+            <span style={{ color: accent }}>{label}</span>
+            <motion.span
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="onboarding-live-badge"
+            >
+              EN VIVO
+            </motion.span>
+          </div>
+          <div className="onboarding-phone-map">
+            <motion.div
+              className="onboarding-phone-route"
+              style={{ background: `linear-gradient(90deg, transparent, ${accent}, #fff)` }}
+              animate={{ scaleX: [0, 1, 1, 0], originX: 0 }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="onboarding-phone-pin"
+              style={{ background: accent, boxShadow: `0 0 16px ${accent}` }}
+              animate={{ top: ['58%', '28%', '58%'], left: ['18%', '72%', '18%'] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
+          <div className="onboarding-phone-bar">
+            <motion.div
+              className="onboarding-phone-progress"
+              style={{ background: accent }}
+              animate={{ width: ['20%', '85%', '20%'] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
+        </div>
+      </div>
       <motion.div
-        animate={{ y: [0, -8, 0], rotate: [0, 5, -5, 0] }}
-        transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-        className="text-5xl"
-      >
-        {emoji}
-      </motion.div>
-      {[...Array(6)].map((_, i) => (
-        <motion.div
-          key={i}
-          className="absolute w-1.5 h-1.5 rounded-full"
-          style={{ background: accent, left: `${15 + i * 14}%`, top: `${20 + (i % 3) * 25}%` }}
-          animate={{ opacity: [0.2, 1, 0.2], scale: [0.8, 1.2, 0.8] }}
-          transition={{ repeat: Infinity, duration: 2, delay: i * 0.25 }}
-        />
-      ))}
+        className="onboarding-hero-glow"
+        style={{ background: `radial-gradient(circle, ${accent}44 0%, transparent 70%)` }}
+        animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.9, 0.5] }}
+        transition={{ repeat: Infinity, duration: 3 }}
+      />
     </div>
   );
 }
 
 function CompleteScene() {
   return (
-    <div className="w-full h-36 rounded-xl bg-gradient-to-br from-[#22c55e]/20 to-[#5b8af9]/20 border border-[#22c55e]/40 flex items-center justify-center relative overflow-hidden">
-      {[...Array(12)].map((_, i) => (
+    <div className="onboarding-scene onboarding-scene-complete">
+      {[...Array(16)].map((_, i) => (
         <motion.div
           key={i}
-          className="absolute w-2 h-2 rounded-sm"
-          style={{ background: ['#5b8af9', '#22c55e', '#f59e0b', '#a78bfa'][i % 4], left: '50%', top: '50%' }}
-          initial={{ x: 0, y: 0, opacity: 1 }}
+          className="onboarding-confetti"
+          style={{ background: ['#fff', '#22c55e', '#5b8af9', '#fbbf24', '#a78bfa'][i % 5] }}
+          initial={{ x: 0, y: 0, opacity: 1, rotate: 0 }}
           animate={{
-            x: (Math.cos(i * 0.52) * 80),
-            y: (Math.sin(i * 0.52) * 60) - 20,
+            x: Math.cos(i * 0.4) * (60 + (i % 3) * 20),
+            y: Math.sin(i * 0.4) * 50 - 30,
             opacity: 0,
-            rotate: 360,
+            rotate: 180 + i * 22,
           }}
-          transition={{ duration: 1.2, delay: i * 0.05, ease: 'easeOut' }}
+          transition={{ duration: 1.4, delay: i * 0.04, ease: 'easeOut' }}
         />
       ))}
       <motion.div
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-        className="text-4xl"
+        initial={{ scale: 0, rotate: -20 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 16 }}
+        className="onboarding-complete-icon"
       >
-        🎉
+        ✓
       </motion.div>
     </div>
   );
@@ -233,31 +336,28 @@ function CompleteScene() {
 
 function LiveMapScene() {
   const pins = [
-    { x: '25%', y: '40%', c: '#5b8af9' },
-    { x: '55%', y: '65%', c: '#f59e0b' },
-    { x: '75%', y: '30%', c: '#22c55e' },
+    { x: '22%', y: '38%', c: '#5b8af9', label: 'M1' },
+    { x: '52%', y: '62%', c: '#f59e0b', label: 'M2' },
+    { x: '78%', y: '28%', c: '#22c55e', label: 'M3' },
   ];
   return (
-    <div className="relative w-full h-36 rounded-xl bg-[#0b0b14] border border-[#252540] overflow-hidden">
-      <div className="absolute inset-0 opacity-20" style={{
-        backgroundImage: 'radial-gradient(#5b8af9 1px, transparent 1px)',
-        backgroundSize: '16px 16px',
-      }} />
+    <div className="onboarding-scene onboarding-scene-live">
+      <div className="onboarding-live-grid" />
       {pins.map((p, i) => (
         <motion.div
-          key={i}
-          className="absolute w-3 h-3 rounded-full"
-          style={{ left: p.x, top: p.y, background: p.c, boxShadow: `0 0 12px ${p.c}` }}
-          animate={{ scale: [1, 1.4, 1] }}
-          transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.4 }}
-        />
+          key={p.label}
+          className="onboarding-live-pin"
+          style={{ left: p.x, top: p.y, background: p.c, boxShadow: `0 0 14px ${p.c}` }}
+          animate={{ scale: [1, 1.35, 1] }}
+          transition={{ repeat: Infinity, duration: 1.6, delay: i * 0.35 }}
+        >
+          {p.label}
+        </motion.div>
       ))}
       <motion.div
-        className="absolute left-[40%] top-[50%] h-0.5 origin-left"
-        style={{ width: '35%', background: 'linear-gradient(90deg, #f59e0b, #5b8af9)' }}
-        initial={{ scaleX: 0 }}
-        animate={{ scaleX: 1 }}
-        transition={{ duration: 1, repeat: Infinity, repeatType: 'reverse' }}
+        className="onboarding-live-scan"
+        animate={{ top: ['0%', '100%'] }}
+        transition={{ duration: 2.5, repeat: Infinity, ease: 'linear' }}
       />
     </div>
   );

@@ -4,6 +4,7 @@ import { APP_RELEASE, RELEASE_NOTES, storageKey } from '../lib/releaseNotes';
 import { stepsForRole } from './onboarding/steps';
 import { Spotlight } from './onboarding/Spotlight';
 import { TourScene } from './onboarding/scenes';
+import { AiNarration } from './onboarding/Typewriter';
 import type { TourStep } from './onboarding/types';
 
 type Mode = 'welcome' | 'update' | null;
@@ -39,9 +40,9 @@ function UpdateCarousel({ highlights, accent }: { highlights: string[]; accent: 
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -24 }}
           transition={{ duration: 0.25 }}
-          className="p-4 rounded-xl bg-[#0b0b14] border border-[#252540] text-center min-h-[72px] flex items-center justify-center"
+          className="p-4 rounded-xl onboarding-update-card text-center min-h-[72px] flex items-center justify-center"
         >
-          <p className="text-sm font-semibold text-[#e8e8f4] leading-snug">{highlights[idx]}</p>
+          <p className="text-sm font-semibold onboarding-text-primary leading-snug">{highlights[idx]}</p>
         </motion.div>
       </AnimatePresence>
     </div>
@@ -139,15 +140,12 @@ export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'cus
       className="pointer-events-auto w-full max-w-sm"
       style={'style' in pos ? pos.style : undefined}
     >
-      <div
-        className="rounded-2xl overflow-hidden shadow-2xl border border-[#252540]/80"
-        style={{ background: 'linear-gradient(160deg, #1a1a2e 0%, #13131f 45%, #0b0b14 100%)' }}
-      >
+      <div className="onboarding-card rounded-2xl overflow-hidden">
         {/* Progress */}
-        <div className="h-1 bg-[#252540]">
+        <div className="onboarding-progress-track">
           <motion.div
-            className="h-full"
-            style={{ background: `linear-gradient(90deg, ${accent}, ${accent}88)` }}
+            className="onboarding-progress-fill"
+            style={{ background: `linear-gradient(90deg, ${accent}, #ffffff88)` }}
             initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
             transition={{ duration: 0.35 }}
@@ -166,36 +164,29 @@ export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'cus
                   ✨
                 </motion.span>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-[#5b8af9]">Versión {APP_RELEASE}</p>
-                  <h2 className="text-lg font-black text-[#e8e8f4]">{release?.title}</h2>
+                  <p className="onboarding-subtitle" style={{ color: accent, marginBottom: 2 }}>Versión {APP_RELEASE}</p>
+                  <h2 className="onboarding-title text-lg">{release?.title}</h2>
                 </div>
               </div>
               {release && <UpdateCarousel highlights={release.highlights} accent={accent} />}
-              <p className="text-[10px] text-[#6b6b8a] text-center">Desliza o usa las flechas del teclado ← →</p>
+              <p className="onboarding-hint text-center">Desliza o usa las flechas del teclado ← →</p>
             </>
           ) : current && (
             <>
-              {current.scene !== 'hero' || !current.target ? (
-                <TourScene scene={current.scene} accent={accent} role={role} />
-              ) : (
-                <TourScene scene="hero" accent={accent} role={role} />
-              )}
-              <div>
-                {current.subtitle && (
-                  <p className="text-[10px] font-black uppercase tracking-wider mb-1" style={{ color: accent }}>
-                    {current.subtitle}
-                  </p>
-                )}
-                <h2 id="onboarding-title" className="text-lg font-black text-[#e8e8f4] mb-2 leading-tight">
-                  {current.title}
-                </h2>
-                <p className="text-xs text-[#6b6b8a] leading-relaxed">{current.body}</p>
-              </div>
+              <TourScene scene={current.scene} accent={accent} role={role} />
+              <AiNarration
+                subtitle={current.subtitle}
+                title={current.title}
+                body={current.body}
+                accent={accent}
+                stepKey={`${mode}-${step}`}
+              />
               {current.target && (
                 <motion.p
-                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  animate={{ opacity: [0.4, 1, 0.4] }}
                   transition={{ repeat: Infinity, duration: 1.5 }}
-                  className="text-[10px] text-[#5b8af9] font-bold text-center"
+                  className="onboarding-spotlight-hint"
+                  style={{ color: accent }}
                 >
                   ↑ Elemento resaltado en pantalla
                 </motion.p>
@@ -207,7 +198,7 @@ export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'cus
             <button
               type="button"
               onClick={finish}
-              className="px-4 py-2.5 rounded-xl bg-[#252540]/80 text-[#6b6b8a] text-xs font-bold border-0 cursor-pointer hover:text-[#e8e8f4] transition-colors"
+              className="onboarding-btn-ghost"
             >
               Omitir
             </button>
@@ -218,7 +209,7 @@ export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'cus
                   className="h-1.5 rounded-full transition-all"
                   style={{
                     width: i === step ? 16 : 6,
-                    background: i <= step ? accent : '#252540',
+                    background: i <= step ? accent : '#333344',
                   }}
                 />
               ))}
@@ -226,8 +217,8 @@ export function OnboardingTour({ role }: { role: 'operator' | 'messenger' | 'cus
             <button
               type="button"
               onClick={next}
-              className="px-5 py-2.5 rounded-xl text-white text-xs font-black border-0 cursor-pointer shadow-lg transition-transform active:scale-95"
-              style={{ background: accent, boxShadow: `0 8px 24px ${accent}44` }}
+              className="onboarding-btn-next"
+              style={{ background: accent, boxShadow: `0 8px 28px ${accent}55` }}
             >
               {step + 1 >= totalSteps ? '¡Empezar!' : 'Siguiente'}
             </button>

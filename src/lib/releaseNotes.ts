@@ -1,5 +1,5 @@
 /** Incrementar en cada release con novedades visibles para el usuario */
-export const APP_RELEASE = '3.2.0';
+export const APP_RELEASE = '3.2.1';
 
 export interface ReleaseNote {
   title: string;
@@ -7,6 +7,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: Record<string, ReleaseNote> = {
+  '3.2.1': {
+    title: 'Tour con IA y mapa estilo Uber',
+    highlights: [
+      'Texto blanco legible + efecto de escritura tipo asistente IA',
+      'Mapa oscuro con ruta animada y vehículo en movimiento',
+      'Mini teléfono con tracking en vivo en cada paso',
+    ],
+  },
   '3.2.0': {
     title: 'Onboarding interactivo',
     highlights: [

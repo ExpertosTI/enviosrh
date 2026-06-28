@@ -379,11 +379,518 @@
   border-color: var(--primary-color) !important;
 }
 
-/* ── Onboarding spotlight ── */
+/* ── Onboarding — siempre oscuro, texto blanco (independiente del tema) ── */
+.onboarding-card {
+  background: linear-gradient(165deg, #12121a 0%, #0a0a0f 50%, #050508 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 0 40px rgba(91, 138, 249, 0.08) !important;
+  color: #ffffff !important;
+}
+
+.onboarding-text-primary,
+.onboarding-title,
+.onboarding-card h2 {
+  color: #ffffff !important;
+}
+
+.onboarding-body {
+  color: #b4b4c8 !important;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  min-height: 2.8em;
+}
+
+.onboarding-subtitle {
+  font-size: 0.625rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.35rem;
+}
+
+.onboarding-title {
+  font-size: 1.2rem;
+  font-weight: 900;
+  line-height: 1.25;
+  margin-bottom: 0.5rem;
+  min-height: 1.4em;
+}
+
+.onboarding-hint {
+  font-size: 0.625rem;
+  color: #6b6b80 !important;
+}
+
+.onboarding-progress-track {
+  height: 3px;
+  background: #1e1e2a;
+}
+
+.onboarding-progress-fill {
+  height: 100%;
+}
+
+.onboarding-btn-ghost {
+  padding: 0.6rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #8a8a9e !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.onboarding-btn-ghost:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.onboarding-btn-next {
+  padding: 0.6rem 1.25rem;
+  border-radius: 0.75rem;
+  color: #ffffff !important;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border: 0;
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.onboarding-btn-next:active {
+  transform: scale(0.95);
+}
+
+.onboarding-cursor {
+  display: inline-block;
+  margin-left: 1px;
+  color: #ffffff;
+  animation: onboarding-blink 0.7s step-end infinite;
+}
+@keyframes onboarding-blink {
+  50% { opacity: 0; }
+}
+
+.onboarding-narration {
+  min-height: 7.5rem;
+}
+
+.onboarding-ai-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.onboarding-ai-orb {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.onboarding-ai-orb-core {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  animation: onboarding-pulse 1.8s ease-in-out infinite;
+}
+@keyframes onboarding-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.onboarding-ai-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #ffffff !important;
+  letter-spacing: 0.04em;
+}
+
+.onboarding-ai-status {
+  font-size: 0.6rem;
+  color: #6b6b80 !important;
+}
+
+.onboarding-spotlight-hint {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.onboarding-update-card {
+  background: #0a0a0f !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ── Scenes ── */
+.onboarding-scene {
+  width: 100%;
+  height: 9.5rem;
+  border-radius: 0.85rem;
+  overflow: hidden;
+  position: relative;
+  background: #0a0a0f !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.onboarding-scene-map {
+  background: #0a0a0f !important;
+}
+
+.onboarding-map-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.onboarding-vehicle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  offset-rotate: auto;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+
+.onboarding-eta-pill {
+  position: absolute;
+  left: 0.65rem;
+  bottom: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: #ffffff !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.onboarding-eta-pill strong {
+  color: #ffffff !important;
+  font-size: 0.7rem;
+}
+.onboarding-eta-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.onboarding-scene-chat {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.onboarding-chat-bubble {
+  max-width: 78%;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.75rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #ffffff !important;
+}
+.onboarding-chat-bubble.is-in {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-bottom-left-radius: 0.2rem;
+}
+.onboarding-chat-bubble.is-out {
+  align-self: flex-end;
+  background: #5b8af9 !important;
+  border-bottom-right-radius: 0.2rem;
+}
+
+.onboarding-typing {
+  align-self: flex-start;
+  font-size: 0.55rem;
+  color: #6b6b80 !important;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.onboarding-typing span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #5b8af9;
+  animation: onboarding-bounce 1s ease infinite;
+}
+.onboarding-typing span:nth-child(2) { animation-delay: 0.15s; }
+.onboarding-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes onboarding-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.onboarding-scene-gps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-gps-ring {
+  position: absolute;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  border: 2px solid #22c55e;
+}
+
+.onboarding-gps-core {
+  position: relative;
+  z-index: 2;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.15);
+  border: 2px solid #22c55e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-gps-label {
+  position: absolute;
+  bottom: 0.5rem;
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #22c55e !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.onboarding-scene-proof {
+  padding: 0.65rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.onboarding-proof-tile {
+  flex: 1;
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  color: #ffffff !important;
+  font-size: 0.55rem;
+  font-weight: 700;
+}
+
+.onboarding-scene-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.onboarding-rating-hint {
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #6b6b80 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.onboarding-star-btn {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  font-size: 1.5rem;
+}
+
+.onboarding-rating-done {
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.onboarding-scene-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-phone {
+  width: 7.5rem;
+  height: 8rem;
+  border-radius: 1rem;
+  background: #1a1a24;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  padding: 0.35rem;
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.onboarding-phone-notch {
+  width: 2rem;
+  height: 0.25rem;
+  background: #333;
+  border-radius: 99px;
+  margin: 0 auto 0.35rem;
+}
+
+.onboarding-phone-screen {
+  background: #0a0a0f;
+  border-radius: 0.65rem;
+  height: calc(100% - 0.6rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding-phone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.45rem;
+  font-weight: 800;
+  color: #ffffff !important;
+}
+
+.onboarding-live-badge {
+  font-size: 0.4rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 99px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.onboarding-phone-map {
+  flex: 1;
+  margin: 0 0.35rem;
+  border-radius: 0.4rem;
+  background: #14141c;
+  position: relative;
+  overflow: hidden;
+}
+
+.onboarding-phone-route {
+  position: absolute;
+  left: 10%;
+  top: 50%;
+  width: 70%;
+  height: 2px;
+  border-radius: 99px;
+}
+
+.onboarding-phone-pin {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.onboarding-phone-bar {
+  height: 0.35rem;
+  margin: 0.35rem;
+  background: #1e1e2a;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.onboarding-phone-progress {
+  height: 100%;
+  border-radius: 99px;
+}
+
+.onboarding-hero-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.onboarding-scene-complete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(91, 138, 249, 0.12)) !important;
+}
+
+.onboarding-confetti {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+}
+
+.onboarding-complete-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: #22c55e;
+  color: #ffffff !important;
+  font-size: 1.75rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 32px rgba(34, 197, 94, 0.5);
+}
+
+.onboarding-scene-live {
+  position: relative;
+}
+
+.onboarding-live-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.25;
+  background-image: radial-gradient(rgba(91, 138, 249, 0.8) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+.onboarding-live-pin {
+  position: absolute;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  font-size: 0.45rem;
+  font-weight: 900;
+  color: #ffffff !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+.onboarding-live-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(91, 138, 249, 0.8), transparent);
+  box-shadow: 0 0 12px rgba(91, 138, 249, 0.6);
+}
+
 .onboarding-spotlight-target {
   position: relative;
   z-index: 1999 !important;
   box-shadow: 0 0 0 4px rgba(91, 138, 249, 0.35);
   border-radius: 12px;
 }
+
 
