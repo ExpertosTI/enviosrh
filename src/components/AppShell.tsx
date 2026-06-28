@@ -44,6 +44,14 @@ function messengerNav(): NavItem[] {
   ];
 }
 
+function tourDataAttr(to: string): string | undefined {
+  if (to === '/operador/nuevo') return 'nav-nuevo';
+  if (to === '/operador/mapa') return 'nav-mapa';
+  if (to === '/operador/admin') return 'nav-admin';
+  if (to === '/mensajero') return 'nav-mensajero';
+  return undefined;
+}
+
 function LangToggle() {
   const { lang, setLang } = useI18n();
   return (
@@ -166,6 +174,7 @@ export function AppShell({ children, nav }: AppShellProps) {
             <Link
               key={item.to}
               to={item.to}
+              data-tour={tourDataAttr(item.to)}
               className={[
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
                 isActive(item)
@@ -243,6 +252,7 @@ export function AppShell({ children, nav }: AppShellProps) {
             <Link
               key={item.to}
               to={item.to}
+              data-tour={tourDataAttr(item.to)}
               className={[
                 'flex-1 flex flex-col items-center gap-1 py-2 text-[10px] font-semibold transition-colors',
                 isActive(item) ? 'text-[#5b8af9]' : 'text-[#6b6b8a]',

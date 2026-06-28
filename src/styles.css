@@ -379,3 +379,11 @@
   border-color: var(--primary-color) !important;
 }
 
+/* ── Onboarding spotlight ── */
+.onboarding-spotlight-target {
+  position: relative;
+  z-index: 1999 !important;
+  box-shadow: 0 0 0 4px rgba(91, 138, 249, 0.35);
+  border-radius: 12px;
+}
+

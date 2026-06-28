@@ -1,5 +1,5 @@
 /** Incrementar en cada release con novedades visibles para el usuario */
-export const APP_RELEASE = '3.1.0';
+export const APP_RELEASE = '3.2.0';
 
 export interface ReleaseNote {
   title: string;
@@ -7,6 +7,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: Record<string, ReleaseNote> = {
+  '3.2.0': {
+    title: 'Onboarding interactivo',
+    highlights: [
+      'Tour animado con spotlight en menús clave',
+      'Mini demos: mapa, chat, GPS y calificación',
+      'Anuncio automático en cada actualización',
+    ],
+  },
   '3.1.0': {
     title: 'Ruta en vivo y mejoras',
     highlights: [

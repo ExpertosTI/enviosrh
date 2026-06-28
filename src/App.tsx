@@ -16,6 +16,7 @@ import { MessengerDelivery } from './views/messenger/Delivery';
 import { CustomerTracking } from './views/customer/Tracking';
 import { MessengerPortal } from './views/messenger/MessengerPortal';
 import { FeaturesIndex } from './views/customer/FeaturesIndex';
+import { PrivacyPolicy } from './views/PrivacyPolicy';
 import { NotFound } from './views/NotFound';
 
 function RequireAuth({ children, role }: { children: React.ReactNode; role?: string }) {
@@ -46,6 +47,7 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/tracking/:token" element={<CustomerTracking />} />
       <Route path="/m-portal/:token" element={<MessengerPortal />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/enviosapp" element={<FeaturesIndex />} />
 
       {/* Raíz → redirige según rol */}
