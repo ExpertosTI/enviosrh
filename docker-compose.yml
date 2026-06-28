@@ -48,8 +48,8 @@ services:
       APP_URL: https://${DOMAIN:?DOMAIN requerido}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
       AI_DEFAULT_PROVIDER: ${AI_DEFAULT_PROVIDER:-gemini}
     depends_on:
       - db

@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 
+interface ModelOption {
+  id: string;
+  label: string;
+  tier: string;
+}
+
 interface AiSettingsData {
   enabled: boolean;
   provider: 'gemini' | 'openai';
@@ -14,13 +20,15 @@ interface AiSettingsData {
 }
 
 export function AiSettings() {
+  const [geminiModels, setGeminiModels] = useState<ModelOption[]>([]);
+  const [openaiModels, setOpenaiModels] = useState<ModelOption[]>([]);
   const [form, setForm] = useState({
     enabled: true,
     provider: 'gemini' as 'gemini' | 'openai',
     gemini_api_key: '',
     openai_api_key: '',
-    gemini_model: 'gemini-2.0-flash',
-    openai_model: 'gpt-4o-mini',
+    gemini_model: 'gemini-2.5-flash',
+    openai_model: 'gpt-4.1-mini',
     use_env_fallback: true,
   });
   const [masked, setMasked] = useState({ gemini: '', openai: '', geminiSet: false, openaiSet: false });
@@ -28,6 +36,15 @@ export function AiSettings() {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
+    api.get<{
+      gemini_models: ModelOption[];
+      openai_models: ModelOption[];
+      default_models: { gemini: string; openai: string };
+    }>('/ai/capabilities').then((c) => {
+      setGeminiModels(c.gemini_models);
+      setOpenaiModels(c.openai_models);
+    }).catch(() => {});
+
     api.get<AiSettingsData>('/ai/settings').then((d) => {
       setForm(f => ({
         ...f,
@@ -64,6 +81,8 @@ export function AiSettings() {
       const res = await api.put<{
         gemini_key_masked: string;
         openai_key_masked: string;
+        gemini_model: string;
+        openai_model: string;
       }>('/ai/settings', payload);
 
       setMasked({
@@ -72,10 +91,16 @@ export function AiSettings() {
         geminiSet: Boolean(res.gemini_key_masked),
         openaiSet: Boolean(res.openai_key_masked),
       });
-      setForm(f => ({ ...f, gemini_api_key: '', openai_api_key: '' }));
+      setForm(f => ({
+        ...f,
+        gemini_api_key: '',
+        openai_api_key: '',
+        gemini_model: res.gemini_model,
+        openai_model: res.openai_model,
+      }));
       setMsg('Configuración IA guardada');
-    } catch {
-      setMsg('Error al guardar');
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Error al guardar');
     } finally {
       setSaving(false);
     }
@@ -89,7 +114,7 @@ export function AiSettings() {
             <span className="text-lg">✦</span> Asistente IA
           </div>
           <p className="text-[10px] text-[#6b6b8a] mt-1">
-            Google Gemini (gratis) u OpenAI. Las claves se guardan cifradas.
+            Modelos 2026 · Gemini 2.5/3.5 y GPT-4.1. Claves cifradas AES-256.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-[#e8e8f4] shrink-0">
@@ -109,7 +134,7 @@ export function AiSettings() {
           value={form.provider}
           onChange={e => setForm({ ...form, provider: e.target.value as 'gemini' | 'openai' })}
         >
-          <option value="gemini">Google Gemini (recomendado · tier gratuito)</option>
+          <option value="gemini">Google Gemini (tier gratuito AI Studio)</option>
           <option value="openai">OpenAI</option>
         </select>
       </label>
@@ -136,9 +161,11 @@ export function AiSettings() {
             value={form.gemini_model}
             onChange={e => setForm({ ...form, gemini_model: e.target.value })}
           >
-            <option value="gemini-2.0-flash">gemini-2.0-flash (rápido)</option>
-            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+            {geminiModels.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.label}{m.tier === 'recommended' ? ' ★' : ''}
+              </option>
+            ))}
           </select>
         </label>
       </div>
@@ -165,9 +192,11 @@ export function AiSettings() {
             value={form.openai_model}
             onChange={e => setForm({ ...form, openai_model: e.target.value })}
           >
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-            <option value="gpt-4o">gpt-4o</option>
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+            {openaiModels.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.label}{m.tier === 'recommended' ? ' ★' : ''}
+              </option>
+            ))}
           </select>
         </label>
       </div>
@@ -178,18 +207,22 @@ export function AiSettings() {
           checked={form.use_env_fallback}
           onChange={e => setForm({ ...form, use_env_fallback: e.target.checked })}
         />
-        Usar API keys del servidor si no hay clave del tenant
+        Usar API keys del servidor (.env) si no hay clave del tenant
       </label>
 
       <p className="text-[10px] text-[#6b6b8a] leading-relaxed">
-        Obtén tu key gratis en{' '}
+        Key gratis:{' '}
         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-[#5b8af9]">
-          Google AI Studio
+          aistudio.google.com/apikey
         </a>
-        . La IA puede consultar envíos, mensajeros, zonas y facturación en tiempo real.
+        . Los modelos 2.0 y 1.5 están deprecados y se migran automáticamente.
       </p>
 
-      {msg && <p className={`text-xs ${msg.includes('Error') ? 'text-red-400' : 'text-[#22c55e]'}`}>{msg}</p>}
+      {msg && (
+        <p className={`text-xs ${msg.includes('Error') || msg.includes('inválid') ? 'text-red-400' : 'text-[#22c55e]'}`}>
+          {msg}
+        </p>
+      )}
       <button type="submit" disabled={saving} className="btn-primary text-xs w-full">
         {saving ? 'Guardando…' : 'Guardar configuración IA'}
       </button>

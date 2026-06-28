@@ -3,7 +3,10 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:
 const ALGO = 'aes-256-gcm';
 
 function deriveKey(): Buffer {
-  const secret = process.env.JWT_SECRET ?? 'fallback-dev-key-not-for-production!!';
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('JWT_SECRET requerido para cifrar API keys de IA');
+  }
   return scryptSync(secret, 'enviosrh-ai-keys', 32);
 }
 

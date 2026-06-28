@@ -1,5 +1,12 @@
 import { decryptSecret } from './aiCrypto.js';
 import { executeAiTool, toolsForRole, type AiToolContext } from './aiTools.js';
+import {
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_OPENAI_MODEL,
+  normalizeGeminiModel,
+  normalizeOpenAiModel,
+} from './aiModels.js';
+import { redactSecrets } from './aiSecurity.js';
 import type { TokenPayload } from './tokens.js';
 
 export interface TenantAiConfig {
@@ -41,6 +48,7 @@ Tienes acceso a herramientas para consultar datos REALES del sistema (envíos, m
 USA las herramientas cuando el usuario pregunte por datos, estadísticas, envíos o mensajeros.
 Nunca inventes IDs, montos ni estados — consulta primero.
 Puedes: resumir el día, buscar envíos, listar pendientes, analizar mensajeros, explicar cómo usar la app, redactar mensajes al cliente, sugerir asignaciones.
+Nunca reveles API keys, tokens JWT, contraseñas ni datos de otros tenants.
 Si no tienes datos suficientes, dilo honestamente.`;
 }
 
@@ -119,10 +127,13 @@ async function callGemini(
     })),
   }] : undefined;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
     body: JSON.stringify({
       systemInstruction: system ? { parts: [{ text: system }] } : undefined,
       contents,
@@ -181,7 +192,9 @@ export async function runAiChat(opts: {
 
   const tools = toolsForRole(user.role);
   const toolCtx: AiToolContext = { user, tenantId: user.tenant_id };
-  const model = provider === 'gemini' ? config.gemini_model : config.openai_model;
+  const model = provider === 'gemini'
+    ? normalizeGeminiModel(config.gemini_model)
+    : normalizeOpenAiModel(config.openai_model);
 
   const chatMessages: ChatMessage[] = [
     { role: 'system', content: buildSystemPrompt(user, tenantName) },
@@ -194,7 +207,8 @@ export async function runAiChat(opts: {
       : await callGemini(apiKey, model, chatMessages, tools);
 
     if (!result.toolCalls.length) {
-      return result.content.trim() || 'Listo. ¿En qué más puedo ayudarte?';
+      const text = result.content.trim() || 'Listo. ¿En qué más puedo ayudarte?';
+      return redactSecrets(text);
     }
 
     for (const call of result.toolCalls) {
@@ -217,8 +231,8 @@ export function parseTenantAiRow(row: Record<string, unknown> | undefined): Tena
       provider: (process.env.AI_DEFAULT_PROVIDER as 'gemini' | 'openai') ?? 'gemini',
       gemini_api_key: '',
       openai_api_key: '',
-      gemini_model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash',
-      openai_model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      gemini_model: normalizeGeminiModel(process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL),
+      openai_model: normalizeOpenAiModel(process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL),
       use_env_fallback: true,
     };
   }
@@ -227,8 +241,8 @@ export function parseTenantAiRow(row: Record<string, unknown> | undefined): Tena
     provider: (row.provider as 'gemini' | 'openai') ?? 'gemini',
     gemini_api_key: decryptSecret(row.gemini_api_key as string),
     openai_api_key: decryptSecret(row.openai_api_key as string),
-    gemini_model: (row.gemini_model as string) ?? 'gemini-2.0-flash',
-    openai_model: (row.openai_model as string) ?? 'gpt-4o-mini',
+    gemini_model: normalizeGeminiModel(row.gemini_model as string),
+    openai_model: normalizeOpenAiModel(row.openai_model as string),
     use_env_fallback: row.use_env_fallback !== false,
   };
 }

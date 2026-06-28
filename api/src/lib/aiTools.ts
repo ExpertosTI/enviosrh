@@ -1,5 +1,6 @@
 import sql from '../db/index.js';
 import type { TokenPayload } from './tokens.js';
+import { assertAllowedToolName, sanitizeToolArgs } from './aiSecurity.js';
 
 export interface AiToolContext {
   user: TokenPayload;
@@ -67,11 +68,13 @@ export async function executeAiTool(
   args: Record<string, unknown>,
   ctx: AiToolContext,
 ): Promise<unknown> {
+  assertAllowedToolName(name);
+  const safeArgs = sanitizeToolArgs(name, args);
   const { tenantId, user } = ctx;
 
   switch (name) {
     case 'get_dashboard_stats': {
-      const days = Math.min(Number(args.days ?? 7), 90);
+      const days = Math.min(Number(safeArgs.days ?? 7), 90);
       const [s] = await sql`
         SELECT
           COUNT(*)::int AS total,
@@ -99,8 +102,8 @@ export async function executeAiTool(
 
     case 'list_deliveries': {
       if (user.role !== 'operator') return { error: 'Solo operadores' };
-      const limit = Math.min(Number(args.limit ?? 10), 25);
-      const state = args.state as string | undefined;
+      const limit = Math.min(Number(safeArgs.limit ?? 10), 25);
+      const state = safeArgs.state as string | undefined;
       const rows = state
         ? await sql`
             SELECT d.id, d.state, d.delivery_fee, d.created_at, d.assigned_at,
@@ -126,7 +129,7 @@ export async function executeAiTool(
     }
 
     case 'search_delivery': {
-      const q = String(args.query ?? '').trim();
+      const q = String(safeArgs.query ?? '').trim();
       if (!q) return { error: 'Query vacío' };
       const like = `%${q}%`;
       const rows = await sql`
@@ -207,7 +210,7 @@ export async function executeAiTool(
     }
 
     case 'my_deliveries': {
-      const state = args.state as string | undefined;
+      const state = safeArgs.state as string | undefined;
       const rows = state
         ? await sql`
             SELECT d.id, d.state, d.delivery_fee, d.created_at, d.location_link,
