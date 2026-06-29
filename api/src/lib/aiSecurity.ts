@@ -179,8 +179,11 @@ export function redactSecrets(text: string): string {
 }
 
 export function safeAiError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : 'Error de IA';
-  if (/ECONNREFUSED|ETIMEDOUT|postgres|sql/i.test(msg)) {
+  const msg = err instanceof Error ? err.message : String(err ?? 'Error de IA');
+  if (/ECONNREFUSED|ETIMEDOUT|postgres|sql|relation.*does not exist/i.test(msg)) {
+    if (/relation.*does not exist/i.test(msg)) {
+      return 'Base de datos desactualizada. Reinicia la API para aplicar migraciones.';
+    }
     return 'Servicio de IA temporalmente no disponible';
   }
   if (/JWT_SECRET requerido/i.test(msg)) {

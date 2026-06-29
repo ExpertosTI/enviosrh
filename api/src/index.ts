@@ -24,8 +24,10 @@ import assignRulesRoutes from './routes/assignRules.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import liveRoutes from './routes/live.js';
 import aiRoutes from './routes/ai.js';
+import { startAiAlertScanner } from './lib/aiAlerts.js';
 import { registerWsRoutes } from './routes/ws.js';
 import { captureException } from './lib/observability.js';
+import { safeAiError } from './lib/aiSecurity.js';
 import { serveStatic } from '@hono/node-server/serve-static';
 
 // ── Validar variables críticas antes de arrancar ────────────
@@ -155,8 +157,10 @@ app.use('*', async (c, next) => {
 
 // Manejo centralizado de errores (Security: no revelar stack traces en prod)
 app.onError((err, c) => {
+  console.error('[API Error]', c.req.method, c.req.path, err);
   captureException(err, { path: c.req.path, method: c.req.method });
-  return c.json({ error: 'Error interno del servidor' }, 500);
+  const msg = safeAiError(err);
+  return c.json({ error: msg }, 500);
 });
 
 app.notFound((c) => {
@@ -192,6 +196,7 @@ const port = Number(process.env.PORT ?? 3000);
 runMigrations()
   .then(() => bootstrapAdmin())
   .then(() => {
+    startAiAlertScanner();
     const server = serve({ fetch: app.fetch, port }, () => {
       console.log(`[enviosrh-api] Escuchando en :${port}`);
     });

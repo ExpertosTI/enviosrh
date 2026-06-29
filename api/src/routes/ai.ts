@@ -139,12 +139,17 @@ ai.get('/stream', auth, async (c) => {
 // ── Preferencias de alertas ──────────────────────────────────
 ai.get('/alert-prefs', auth, async (c) => {
   const user = c.get('user');
-  const [row] = await sql`SELECT * FROM ai_alert_prefs WHERE user_id = ${user.sub}`;
-  return c.json({ ...DEFAULT_ALERT_PREFS, ...(row ?? {}) });
+  try {
+    const [row] = await sql`SELECT * FROM ai_alert_prefs WHERE user_id = ${user.sub}`;
+    return c.json({ ...DEFAULT_ALERT_PREFS, ...(row ?? {}) });
+  } catch {
+    return c.json(DEFAULT_ALERT_PREFS);
+  }
 });
 
 ai.put('/alert-prefs', auth, async (c) => {
   const user = c.get('user');
+  try {
   const body = await c.req.json<Partial<typeof DEFAULT_ALERT_PREFS>>();
 
   const [row] = await sql`
@@ -180,10 +185,14 @@ ai.put('/alert-prefs', auth, async (c) => {
     RETURNING *
   `;
   return c.json(row);
+  } catch {
+    return c.json(DEFAULT_ALERT_PREFS);
+  }
 });
 
 // ── Probar conexión (sin guardar) ────────────────────────────
 ai.post('/test', auth, async (c) => {
+  try {
   const user = c.get('user');
   if (user.role !== 'operator') return c.json({ error: 'Solo operadores' }, 403);
 
@@ -220,6 +229,10 @@ ai.post('/test', auth, async (c) => {
 
   const result = await verifyAiConnection(provider, apiKey, model);
   return c.json(result, result.ok ? 200 : 400);
+  } catch (err) {
+    console.error('[ai/test]', err);
+    return c.json({ ok: false, message: safeAiError(err) }, 500);
+  }
 });
 
 // ── Settings (solo operador) ─────────────────────────────────
@@ -266,6 +279,7 @@ ai.get('/settings', auth, async (c) => {
 });
 
 ai.put('/settings', auth, async (c) => {
+  try {
   const user = c.get('user');
   if (user.role !== 'operator') return c.json({ error: 'Solo operadores' }, 403);
 
@@ -304,10 +318,26 @@ ai.put('/settings', auth, async (c) => {
   let openaiKey = existing?.openai_api_key as string | null;
 
   if (body.clear_gemini_key) geminiKey = null;
-  else if (newGeminiPlain) geminiKey = encryptSecret(newGeminiPlain);
+  else if (newGeminiPlain) {
+    try {
+      geminiKey = encryptSecret(newGeminiPlain);
+    } catch (err) {
+      return c.json({ error: safeAiError(err) }, 400);
+    }
+  } else {
+    geminiKey = (existing?.gemini_api_key as string | null) ?? null;
+  }
 
   if (body.clear_openai_key) openaiKey = null;
-  else if (newOpenaiPlain) openaiKey = encryptSecret(newOpenaiPlain);
+  else if (newOpenaiPlain) {
+    try {
+      openaiKey = encryptSecret(newOpenaiPlain);
+    } catch (err) {
+      return c.json({ error: safeAiError(err) }, 400);
+    }
+  } else {
+    openaiKey = (existing?.openai_api_key as string | null) ?? null;
+  }
 
   if (!body.gemini_model && existing?.gemini_model) {
     geminiModel = normalizeGeminiModel(existing.gemini_model as string);
@@ -366,6 +396,10 @@ ai.put('/settings', auth, async (c) => {
     openai_key_masked: maskSecret(row.openai_api_key as string),
     updated_at: row.updated_at,
   });
+  } catch (err) {
+    console.error('[ai/settings]', err);
+    return c.json({ error: safeAiError(err) }, 500);
+  }
 });
 
 // ── Conversaciones ───────────────────────────────────────────

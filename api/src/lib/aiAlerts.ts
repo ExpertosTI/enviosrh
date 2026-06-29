@@ -165,12 +165,17 @@ export async function scanOperationalAlerts(tenantId: string) {
   }
 }
 
-// Escaneo global cada 5 min (solo tenants con operadores conectados idealmente; simplificado)
-setInterval(async () => {
-  try {
-    const tenants = await sql`SELECT DISTINCT tenant_id FROM ai_alert_prefs WHERE proactive_enabled = true`;
-    for (const t of tenants) {
-      await scanOperationalAlerts(t.tenant_id as string);
-    }
-  } catch { /* ignore */ }
-}, 5 * 60_000);
+/** Escaneo periódico: pedidos sin asignar > 15 min */
+let alertScanStarted = false;
+export function startAiAlertScanner() {
+  if (alertScanStarted) return;
+  alertScanStarted = true;
+  setInterval(async () => {
+    try {
+      const tenants = await sql`SELECT DISTINCT tenant_id FROM ai_alert_prefs WHERE proactive_enabled = true`;
+      for (const t of tenants) {
+        await scanOperationalAlerts(t.tenant_id as string);
+      }
+    } catch { /* tabla aún no migrada */ }
+  }, 5 * 60_000);
+}
