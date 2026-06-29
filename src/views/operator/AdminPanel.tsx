@@ -219,6 +219,10 @@ export function AdminPanel() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!registerForm.name.trim()) {
+      setRegisterError('El nombre es obligatorio');
+      return;
+    }
     setRegisterLoading(true);
     setRegisterError('');
     try {
@@ -803,16 +807,16 @@ export function AdminPanel() {
 
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#6b6b8a]">
-                    Usuario o Correo Electrónico
+                    Usuario de acceso <span className="normal-case font-normal">(sin correo)</span>
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="Ej. juanperez o juan@empresa.com"
+                    placeholder="Ej. michael_m — o deja vacío y usa teléfono"
                     className="px-3 py-2 bg-slate-50 dark:bg-[#0b0b14] border border-slate-200 dark:border-[#252540] rounded-xl text-sm outline-none text-slate-800 dark:text-[#e8e8f4] focus:border-[#5b8af9] transition-all"
                     value={registerForm.email}
                     onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
                   />
+                  <p className="text-[9px] text-slate-400 dark:text-[#6b6b8a]">No necesitas correo. Si lo dejas vacío, se crea del teléfono o nombre.</p>
                 </div>
 
                 <div className="flex flex-col gap-1">

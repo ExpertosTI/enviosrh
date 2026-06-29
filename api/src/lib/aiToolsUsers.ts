@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import sql from '../db/index.js';
 import { isValidUuid } from './aiSecurity.js';
 import { sendEmployeeWelcomeEmail } from './email.js';
+import { isValidLoginId, resolveLoginId, isRealEmail } from './userLogin.js';
 import type { AiToolContext } from './aiTools.js';
 
 export const USER_AI_TOOL_DEFINITIONS = [
@@ -27,16 +28,17 @@ export const USER_AI_TOOL_DEFINITIONS = [
   },
   {
     name: 'create_team_member',
-    description: 'Crea un nuevo mensajero o colaborador/vendedor (operador). Genera contraseña temporal y envía correo de bienvenida.',
+    description: 'Crea mensajero o colaborador. Solo necesitas nombre y usuario (sin correo). Si no hay usuario, se genera del teléfono o nombre.',
     parameters: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Nombre completo' },
-        email: { type: 'string', description: 'Correo o usuario de acceso' },
-        phone: { type: 'string', description: 'Teléfono (opcional)' },
+        username: { type: 'string', description: 'Nombre de usuario para login (sin @, 3-30 caracteres)' },
+        email: { type: 'string', description: 'Opcional: correo si quieres enviar bienvenida por email' },
+        phone: { type: 'string', description: 'Teléfono (opcional, sirve para generar usuario)' },
         role: { type: 'string', description: 'messenger o operator' },
       },
-      required: ['name', 'email', 'role'],
+      required: ['name', 'role'],
     },
   },
   {
@@ -85,8 +87,8 @@ function assertOperator(ctx: AiToolContext): string | null {
   return null;
 }
 
-function validEmailOrUsername(email: string): boolean {
-  return /^\S+@\S+\.\S+$/.test(email) || /^[a-zA-Z0-9_.-]{3,30}$/.test(email);
+function validEmailOrUsername(value: string): boolean {
+  return isValidLoginId(value);
 }
 
 export async function executeUserAiTool(
@@ -136,20 +138,25 @@ export async function executeUserAiTool(
 
     case 'create_team_member': {
       const memberName = String(args.name ?? '').trim();
-      const email = String(args.email ?? '').trim().toLowerCase();
       const phone = args.phone ? String(args.phone).trim() : null;
       const role = String(args.role ?? '').toLowerCase();
+      const loginId = resolveLoginId({
+        username: args.username ? String(args.username) : undefined,
+        email: args.email ? String(args.email) : undefined,
+        phone: phone ?? undefined,
+        name: memberName,
+      });
 
-      if (!memberName || !email) return { error: 'Nombre y email son obligatorios' };
+      if (!memberName) return { error: 'El nombre es obligatorio' };
+      if (!loginId) {
+        return { error: 'Indica un nombre de usuario (ej. michael_m) o un teléfono para generarlo' };
+      }
       if (role !== 'operator' && role !== 'messenger') {
         return { error: 'Rol debe ser operator (vendedor/colaborador) o messenger (mensajero)' };
       }
-      if (!validEmailOrUsername(email)) {
-        return { error: 'Email o usuario inválido (3-30 caracteres o correo válido)' };
-      }
 
-      const [existing] = await sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
-      if (existing) return { error: 'Ese email/usuario ya está registrado' };
+      const [existing] = await sql`SELECT id FROM users WHERE email = ${loginId} LIMIT 1`;
+      if (existing) return { error: 'Ese usuario ya está registrado' };
 
       const tempPassword = Math.random().toString(36).substring(2, 10).toUpperCase();
       const hashed = await bcrypt.hash(tempPassword, 10);
@@ -158,25 +165,30 @@ export async function executeUserAiTool(
 
       const [newUser] = await sql`
         INSERT INTO users (name, phone, email, password, role, active, tenant_id)
-        VALUES (${memberName}, ${phone}, ${email}, ${hashed}, ${role}, true, ${tenantId})
+        VALUES (${memberName}, ${phone}, ${loginId}, ${hashed}, ${role}, true, ${tenantId})
         RETURNING id, name, email, phone, role, active, created_at
       `;
 
-      sendEmployeeWelcomeEmail(
-        newUser.email,
-        newUser.name,
-        newUser.role,
-        tempPassword,
-        tenant?.name ?? 'EnviaYa!!',
-        tenant?.slug ?? 'enviaya',
-      ).catch(err => console.error('[AI Welcome-Email]', err));
+      if (isRealEmail(loginId)) {
+        sendEmployeeWelcomeEmail(
+          newUser.email,
+          newUser.name,
+          newUser.role,
+          tempPassword,
+          tenant?.name ?? 'EnviaYa!!',
+          tenant?.slug ?? 'enviaya',
+        ).catch(err => console.error('[AI Welcome-Email]', err));
+      }
 
       return {
         ok: true,
         message: `${role === 'messenger' ? 'Mensajero' : 'Colaborador'} creado correctamente`,
         user: newUser,
+        username: loginId,
         temp_password: tempPassword,
-        note: 'Comparte la contraseña temporal con el colaborador. Se envió correo de bienvenida si el email es válido.',
+        note: isRealEmail(loginId)
+          ? 'Se envió correo de bienvenida.'
+          : 'Sin correo — comparte usuario y contraseña temporal con el colaborador.',
       };
     }
 

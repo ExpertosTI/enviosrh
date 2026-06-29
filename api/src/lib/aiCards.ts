@@ -24,7 +24,7 @@ export function cardFromToolResult(name: string, result: unknown): AiResultCard 
   if (name === 'create_team_member') {
     const fields: AiResultCardField[] = [
       { label: 'Nombre', value: user.name, copyable: true },
-      { label: 'Usuario / Email', value: user.email, copyable: true },
+      { label: 'Usuario', value: user.email, copyable: true },
       { label: 'Rol', value: roleLabel },
     ];
     if (user.phone) fields.push({ label: 'Teléfono', value: user.phone, copyable: true });

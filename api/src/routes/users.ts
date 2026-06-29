@@ -6,73 +6,74 @@ import { isValidUuid } from '../lib/validation.js';
 import { sendEmployeeWelcomeEmail } from '../lib/email.js';
 import { recordMessengerLocation } from '../lib/locationHistory.js';
 import { checkGeofenceArrival } from '../lib/geofence.js';
+import { isValidLoginId, isRealEmail, resolveLoginId } from '../lib/userLogin.js';
 
 const users = new Hono();
 
 // Registrar un nuevo colaborador directamente por el administrador
 users.post('/', auth, operatorOnly, async (c) => {
   const adminUser = c.get('user');
-  const { name, email, phone, role, avatar_url } = await c.req.json<{
+  const { name, email, username, phone, role, avatar_url } = await c.req.json<{
     name?: string;
     email?: string;
+    username?: string;
     phone?: string;
     role?: string;
     avatar_url?: string;
   }>();
 
-  if (!name || !email || !role) {
-    return c.json({ error: 'Nombre, email y rol son requeridos' }, 400);
+  if (!name?.trim() || !role) {
+    return c.json({ error: 'Nombre y rol son requeridos' }, 400);
+  }
+
+  const loginId = resolveLoginId({ username, email, phone, name });
+  if (!loginId) {
+    return c.json({
+      error: 'Indica un nombre de usuario (3-30 caracteres) o teléfono para generarlo automáticamente',
+    }, 400);
   }
 
   if (role !== 'operator' && role !== 'messenger') {
     return c.json({ error: 'Rol inválido. Debe ser operator o messenger.' }, 400);
   }
 
-  // Validar formato de email o usuario
-  if (!/^\S+@\S+\.\S+$/.test(email) && !/^[a-zA-Z0-9_.-]{3,30}$/.test(email)) {
-    return c.json({ error: 'El identificador debe ser un correo válido o un nombre de usuario de 3 a 30 caracteres (letras, números, _, -, .)' }, 400);
-  }
-
-  // Verificar si el correo ya existe
-  const [existing] = await sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
+  const [existing] = await sql`SELECT id FROM users WHERE email = ${loginId} LIMIT 1`;
   if (existing) {
-    return c.json({ error: 'El correo ya está registrado' }, 400);
+    return c.json({ error: 'Ese usuario ya está registrado' }, 400);
   }
 
-  // Generar contraseña temporal legible (8 caracteres en mayúsculas)
   const tempPassword = Math.random().toString(36).substring(2, 10).toUpperCase();
   const hashed = await bcrypt.hash(tempPassword, 10);
 
-  // Obtener datos del tenant para el correo
   const [tenant] = await sql`
     SELECT name, slug FROM tenants WHERE id = ${adminUser.tenant_id} LIMIT 1
   `;
-  const tenantName = tenant?.name ?? 'EnvíosRH';
-  const tenantSlug = tenant?.slug ?? 'enviosrh';
+  const tenantName = tenant?.name ?? 'EnviaYa!!';
+  const tenantSlug = tenant?.slug ?? 'enviaya';
 
-  // Insertar usuario directamente activo
   const [newUser] = await sql`
     INSERT INTO users (name, phone, email, password, role, active, tenant_id, avatar_url)
-    VALUES (${name.trim()}, ${phone?.trim() || null}, ${email.trim().toLowerCase()}, ${hashed}, ${role}, true, ${adminUser.tenant_id}, ${avatar_url || null})
+    VALUES (${name.trim()}, ${phone?.trim() || null}, ${loginId}, ${hashed}, ${role}, true, ${adminUser.tenant_id}, ${avatar_url || null})
     RETURNING id, name, email, role, active, created_at, avatar_url
   `;
 
-  // Enviar el correo de confirmación de forma asíncrona
-  sendEmployeeWelcomeEmail(
-    newUser.email,
-    newUser.name,
-    newUser.role,
-    tempPassword,
-    tenantName,
-    tenantSlug
-  ).catch(err => {
-    console.error('[Welcome-Email] Error en envío de correo:', err);
-  });
+  if (isRealEmail(loginId)) {
+    sendEmployeeWelcomeEmail(
+      newUser.email,
+      newUser.name,
+      newUser.role,
+      tempPassword,
+      tenantName,
+      tenantSlug,
+    ).catch(err => console.error('[Welcome-Email] Error en envío de correo:', err));
+  }
 
   return c.json({
-    message: 'Colaborador registrado exitosamente y correo de confirmación enviado.',
+    message: isRealEmail(loginId)
+      ? 'Colaborador registrado y correo de bienvenida enviado.'
+      : 'Colaborador registrado. Comparte el usuario y contraseña temporal.',
     user: newUser,
-    tempPassword, // Se devuelve la contraseña temporal para que el administrador la vea o copie
+    tempPassword,
   }, 201);
 });
 

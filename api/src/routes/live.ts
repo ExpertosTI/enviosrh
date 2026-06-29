@@ -19,6 +19,9 @@ live.get('/map', auth, operatorOnly, async (c) => {
     JOIN customers c ON c.id = d.customer_id
     WHERE d.tenant_id = ${user.tenant_id} AND d.state IN ('assigned', 'in_transit')
   `;
+  const [tenant] = await sql`
+    SELECT name, latitude, longitude FROM tenants WHERE id = ${user.tenant_id}
+  `;
   return c.json({
     messengers: messengers.map(m => ({
       ...m,
@@ -27,6 +30,11 @@ live.get('/map', auth, operatorOnly, async (c) => {
       active_deliveries: Number(m.active_deliveries),
     })),
     deliveries,
+    tenant: tenant ? {
+      name: tenant.name,
+      latitude: tenant.latitude != null ? Number(tenant.latitude) : null,
+      longitude: tenant.longitude != null ? Number(tenant.longitude) : null,
+    } : null,
   });
 });
 

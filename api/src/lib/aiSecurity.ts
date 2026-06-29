@@ -188,7 +188,8 @@ export function sanitizeToolArgs(name: string, args: Record<string, unknown>): R
 
   if (name === 'create_team_member') {
     clean.name = String(args.name ?? '').trim().slice(0, 80);
-    clean.email = String(args.email ?? '').trim().slice(0, 120);
+    if (args.username) clean.username = String(args.username).trim().slice(0, 30);
+    if (args.email) clean.email = String(args.email).trim().slice(0, 120);
     if (args.phone) clean.phone = String(args.phone).trim().slice(0, 30);
     const role = String(args.role ?? '').trim().toLowerCase();
     if (role === 'messenger' || role === 'operator') clean.role = role;
