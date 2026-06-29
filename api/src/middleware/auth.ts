@@ -3,9 +3,15 @@ import { verifyToken, type TokenPayload } from '../lib/tokens.js';
 
 type Variables = { user: TokenPayload };
 
-export const auth = createMiddleware<{ Variables: Variables }>(async (c, next) => {
+function extractToken(c: { req: { header: (n: string) => string | undefined; query: (k: string) => string | undefined } }): string | null {
   const header = c.req.header('Authorization') ?? '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (header.startsWith('Bearer ')) return header.slice(7);
+  const q = c.req.query('token');
+  return q?.trim() || null;
+}
+
+export const auth = createMiddleware<{ Variables: Variables }>(async (c, next) => {
+  const token = extractToken(c);
 
   if (!token) return c.json({ error: 'No autorizado' }, 401);
 

@@ -7,6 +7,7 @@ import {
   normalizeOpenAiModel,
 } from './aiModels.js';
 import { redactSecrets } from './aiSecurity.js';
+import { toGeminiSchema } from './geminiSchema.js';
 import type { TokenPayload } from './tokens.js';
 
 export interface TenantAiConfig {
@@ -29,6 +30,18 @@ interface ToolCall {
   args: Record<string, unknown>;
 }
 
+type GeminiPart =
+  | { text: string }
+  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | { functionResponse: { name: string; response: unknown } };
+
+interface GeminiContent {
+  role: 'user' | 'model';
+  parts: GeminiPart[];
+}
+
+const GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash'];
+
 function resolveApiKey(config: TenantAiConfig, provider: 'gemini' | 'openai'): string {
   const tenantKey = provider === 'gemini' ? config.gemini_api_key : config.openai_api_key;
   if (tenantKey) return tenantKey;
@@ -43,13 +56,86 @@ function buildSystemPrompt(user: TokenPayload, tenantName: string): string {
   return `Eres Renace AI, el asistente inteligente de EnvíosRH para ${tenantName}.
 El usuario es ${roleLabel} llamado ${user.name}.
 
-Responde siempre en español, de forma clara, profesional y concisa.
-Tienes acceso a herramientas para consultar datos REALES del sistema (envíos, mensajeros, zonas, facturación).
-USA las herramientas cuando el usuario pregunte por datos, estadísticas, envíos o mensajeros.
-Nunca inventes IDs, montos ni estados — consulta primero.
-Puedes: resumir el día, buscar envíos, listar pendientes, analizar mensajeros, explicar cómo usar la app, redactar mensajes al cliente, sugerir asignaciones.
-Nunca reveles API keys, tokens JWT, contraseñas ni datos de otros tenants.
-Si no tienes datos suficientes, dilo honestamente.`;
+Responde siempre en español, claro y profesional. Usa viñetas o párrafos cortos.
+Tienes herramientas para consultar datos REALES (envíos, mensajeros, alertas, GPS).
+USA herramientas cuando pregunten por datos concretos — nunca inventes IDs ni montos.
+Si una herramienta falla, dilo y ofrece alternativa.
+Nunca reveles API keys ni datos de otros tenants.`;
+}
+
+function geminiToolSchema(tools: ReturnType<typeof toolsForRole>) {
+  if (!tools.length) return undefined;
+  return [{
+    functionDeclarations: tools.map(t => ({
+      name: t.name,
+      description: t.description.slice(0, 256),
+      parameters: toGeminiSchema(t.parameters ?? { type: 'object', properties: {} }),
+    })),
+  }];
+}
+
+function shouldUseTools(message: string, tools: ReturnType<typeof toolsForRole>): ReturnType<typeof toolsForRole> {
+  if (!tools.length) return tools;
+  // Saludos cortos: sin herramientas para respuesta rápida y evitar errores de schema
+  const trimmed = message.trim();
+  if (trimmed.length < 20 && !/\d|envío|pedido|mensajero|entreg|busca|cuánt|lista|resumen|alerta/i.test(trimmed)) {
+    return [];
+  }
+  return tools;
+}
+
+async function callGeminiOnce(
+  apiKey: string,
+  model: string,
+  system: string,
+  contents: GeminiContent[],
+  tools: ReturnType<typeof toolsForRole>,
+): Promise<{ content: string; toolCalls: ToolCall[]; modelUsed: string }> {
+  const models = [model, ...GEMINI_FALLBACK_MODELS.filter(m => m !== model)];
+  let lastError = 'Error de Gemini';
+
+  for (const tryModel of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${tryModel}:generateContent`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+        contents,
+        tools: geminiToolSchema(tools),
+        toolConfig: tools.length ? { functionCallingConfig: { mode: 'AUTO' } } : undefined,
+        generationConfig: { temperature: 0.35, maxOutputTokens: 2048 },
+      }),
+    });
+
+    const data = await res.json() as {
+      error?: { message?: string };
+      candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
+    };
+
+    if (!res.ok) {
+      const msg = data.error?.message ?? `Gemini error ${res.status}`;
+      lastError = msg;
+      if (res.status === 404 || /not found|not supported/i.test(msg)) continue;
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('API key de Gemini inválida o sin permisos');
+      }
+      throw new Error(msg);
+    }
+
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const toolCalls: ToolCall[] = [];
+    let content = '';
+    for (const part of parts) {
+      if ('functionCall' in part && part.functionCall) {
+        toolCalls.push({ name: part.functionCall.name, args: part.functionCall.args ?? {} });
+      }
+      if ('text' in part && part.text) content += part.text;
+    }
+    return { content, toolCalls, modelUsed: tryModel };
+  }
+
+  throw new Error(lastError);
 }
 
 async function callOpenAI(
@@ -79,7 +165,7 @@ async function callOpenAI(
       messages: openaiMessages,
       tools: openaiTools.length ? openaiTools : undefined,
       tool_choice: openaiTools.length ? 'auto' : undefined,
-      temperature: 0.4,
+      temperature: 0.35,
       max_tokens: 2048,
     }),
   });
@@ -105,70 +191,87 @@ async function callOpenAI(
   return { content: msg?.content ?? '', toolCalls };
 }
 
-async function callGemini(
+async function runGeminiWithTools(
   apiKey: string,
   model: string,
-  messages: ChatMessage[],
-  tools: ReturnType<typeof toolsForRole>,
-): Promise<{ content: string; toolCalls: ToolCall[] }> {
-  const system = messages.find(m => m.role === 'system')?.content ?? '';
-  const contents = messages
+  system: string,
+  history: ChatMessage[],
+  allTools: ReturnType<typeof toolsForRole>,
+  toolCtx: AiToolContext,
+): Promise<string> {
+  const contents: GeminiContent[] = history
     .filter(m => m.role !== 'system')
     .map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
+      role: m.role === 'assistant' ? 'model' as const : 'user' as const,
       parts: [{ text: m.content }],
     }));
 
-  const geminiTools = tools.length ? [{
-    functionDeclarations: tools.map(t => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    })),
-  }] : undefined;
+  const lastUser = [...history].reverse().find(m => m.role === 'user')?.content ?? '';
+  let activeModel = model;
+  let tools = shouldUseTools(lastUser, allTools);
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-      contents,
-      tools: geminiTools,
-      toolConfig: geminiTools ? { functionCallingConfig: { mode: 'AUTO' } } : undefined,
-      generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
-    }),
-  });
+  for (let step = 0; step < 6; step++) {
+    const result = await callGeminiOnce(apiKey, activeModel, system, contents, tools);
+    activeModel = result.modelUsed;
 
-  const data = await res.json() as {
-    error?: { message?: string };
-    candidates?: Array<{
-      content?: {
-        parts?: Array<{
-          text?: string;
-          functionCall?: { name: string; args?: Record<string, unknown> };
-        }>;
-      };
-    }>;
-  };
-
-  if (!res.ok) throw new Error(data.error?.message ?? `Gemini error ${res.status}`);
-
-  const parts = data.candidates?.[0]?.content?.parts ?? [];
-  const toolCalls: ToolCall[] = [];
-  let content = '';
-
-  for (const part of parts) {
-    if (part.functionCall) {
-      toolCalls.push({ name: part.functionCall.name, args: part.functionCall.args ?? {} });
+    if (!result.toolCalls.length) {
+      const text = result.content.trim();
+      if (text) return redactSecrets(text);
+      // Si sin herramientas no hubo texto, reintentar con herramientas
+      if (!tools.length && allTools.length) {
+        tools = allTools;
+        continue;
+      }
+      return '¡Hola! Soy Renace AI. ¿En qué puedo ayudarte con tus envíos?';
     }
-    if (part.text) content += part.text;
+
+    tools = allTools;
+
+    contents.push({
+      role: 'model',
+      parts: result.toolCalls.map(tc => ({
+        functionCall: { name: tc.name, args: tc.args },
+      })),
+    });
+
+    const responseParts: GeminiPart[] = [];
+    for (const call of result.toolCalls) {
+      const toolResult = await executeAiTool(call.name, call.args, toolCtx);
+      responseParts.push({
+        functionResponse: { name: call.name, response: { result: toolResult } },
+      });
+    }
+    contents.push({ role: 'user', parts: responseParts });
   }
 
-  return { content, toolCalls };
+  return 'Consulté los datos disponibles. ¿Puedes ser más específico?';
+}
+
+async function runOpenAiWithTools(
+  apiKey: string,
+  model: string,
+  chatMessages: ChatMessage[],
+  tools: ReturnType<typeof toolsForRole>,
+  toolCtx: AiToolContext,
+): Promise<string> {
+  for (let step = 0; step < 6; step++) {
+    const result = await callOpenAI(apiKey, model, chatMessages, tools);
+    if (!result.toolCalls.length) {
+      const text = result.content.trim();
+      return redactSecrets(text || 'Listo. ¿En qué más puedo ayudarte?');
+    }
+
+    chatMessages.push({ role: 'assistant', content: result.content || `[consultando: ${result.toolCalls.map(t => t.name).join(', ')}]` });
+
+    for (const call of result.toolCalls) {
+      const toolResult = await executeAiTool(call.name, call.args, toolCtx);
+      chatMessages.push({
+        role: 'user',
+        content: `[resultado ${call.name}]: ${JSON.stringify(toolResult)}`,
+      });
+    }
+  }
+  return 'Consulté los datos disponibles. ¿Puedes ser más específico?';
 }
 
 export async function runAiChat(opts: {
@@ -185,43 +288,27 @@ export async function runAiChat(opts: {
   if (!apiKey) {
     throw new Error(
       provider === 'gemini'
-        ? 'Configura tu API key de Google Gemini en Ajustes → IA'
+        ? 'Configura tu API key de Google Gemini en Ajustes → IA (o activa fallback del servidor)'
         : 'Configura tu API key de OpenAI en Ajustes → IA',
     );
   }
 
   const tools = toolsForRole(user.role);
   const toolCtx: AiToolContext = { user, tenantId: user.tenant_id };
-  const model = provider === 'gemini'
-    ? normalizeGeminiModel(config.gemini_model)
-    : normalizeOpenAiModel(config.openai_model);
+  const system = buildSystemPrompt(user, tenantName);
+  const history = messages.filter(m => m.role !== 'system');
 
-  const chatMessages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt(user, tenantName) },
-    ...messages.filter(m => m.role !== 'system'),
-  ];
-
-  for (let i = 0; i < 5; i++) {
-    const result = provider === 'openai'
-      ? await callOpenAI(apiKey, model, chatMessages, tools)
-      : await callGemini(apiKey, model, chatMessages, tools);
-
-    if (!result.toolCalls.length) {
-      const text = result.content.trim() || 'Listo. ¿En qué más puedo ayudarte?';
-      return redactSecrets(text);
-    }
-
-    for (const call of result.toolCalls) {
-      const toolResult = await executeAiTool(call.name, call.args, toolCtx);
-      const resultText = JSON.stringify(toolResult);
-      chatMessages.push({
-        role: 'user',
-        content: `[Datos del sistema — ${call.name}]: ${resultText}`,
-      });
-    }
+  if (provider === 'gemini') {
+    const model = normalizeGeminiModel(config.gemini_model);
+    return runGeminiWithTools(apiKey, model, system, history, tools, toolCtx);
   }
 
-  return 'He consultado los datos. ¿Puedes reformular tu pregunta?';
+  const model = normalizeOpenAiModel(config.openai_model);
+  const chatMessages: ChatMessage[] = [
+    { role: 'system', content: system },
+    ...history,
+  ];
+  return runOpenAiWithTools(apiKey, model, chatMessages, tools, toolCtx);
 }
 
 export function parseTenantAiRow(row: Record<string, unknown> | undefined): TenantAiConfig {

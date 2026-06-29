@@ -5,6 +5,7 @@ import { isValidToken } from '../lib/validation.js';
 import { emitDeliveryEvent, setTyping, getTyping } from '../lib/realtime.js';
 import { notifyDelivery } from '../lib/pushNotify.js';
 import { recordMessengerLocation } from '../lib/locationHistory.js';
+import { aiAlertRating } from '../lib/aiAlerts.js';
 
 /** Rutas públicas: no requieren JWT. Usan tokens firmados de BD. */
 const portal = new Hono();
@@ -219,7 +220,10 @@ portal.post('/c/:token/rate', async (c) => {
   }
 
   const [row] = await sql`
-    SELECT id, state, rating FROM deliveries WHERE customer_token = ${token} LIMIT 1
+    SELECT d.id, d.state, d.rating, d.tenant_id, c.name AS customer_name
+    FROM deliveries d
+    JOIN customers c ON c.id = d.customer_id
+    WHERE d.customer_token = ${token} LIMIT 1
   `;
   if (!row) return c.json({ error: 'No encontrado' }, 404);
   if (row.rating) return c.json({ error: 'Ya calificado' }, 409);
@@ -235,6 +239,8 @@ portal.post('/c/:token/rate', async (c) => {
     `Nueva Calificación de Cliente - Envío #${row.id.slice(0,8).toUpperCase()}`,
     `El cliente del envío #${row.id} ha enviado una calificación.\nCalificación: ${rating} estrellas.\nComentario: ${note ?? 'Ninguno'}`
   ).catch(err => console.error('[Email-Rate] Error:', err));
+
+  aiAlertRating(row.tenant_id as string, row.id as string, row.customer_name as string, rating).catch(() => {});
 
   return c.json({ ok: true });
 });

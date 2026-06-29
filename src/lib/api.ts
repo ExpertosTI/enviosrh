@@ -8,6 +8,7 @@ export function getBaseUrl(): string {
 }
 
 function getToken() { return localStorage.getItem('enviosrh_token'); }
+export { getToken };
 export function setToken(token: string) { localStorage.setItem('enviosrh_token', token); }
 export function clearToken() {
   localStorage.removeItem('enviosrh_token');
@@ -74,5 +75,9 @@ export async function uploadFile(file: File): Promise<{ url: string }> {
 }
 
 export function sseUrl(path: string): string {
-  return `${getBaseUrl()}${path}`;
+  const token = getToken();
+  const base = `${getBaseUrl()}${path}`;
+  if (!token) return base;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${base}${sep}token=${encodeURIComponent(token)}`;
 }

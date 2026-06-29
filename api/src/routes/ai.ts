@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import sql from '../db/index.js';
 import { auth } from '../middleware/auth.js';
-import { encryptSecret, maskSecret } from '../lib/aiCrypto.js';
+import { decryptSecret, encryptSecret, maskSecret } from '../lib/aiCrypto.js';
 import { runAiChat, parseTenantAiRow } from '../lib/aiEngine.js';
+import { subscribeTenantAi, type TenantAiEvent } from '../lib/aiTenantBus.js';
 import {
   DEFAULT_GEMINI_MODEL,
   DEFAULT_OPENAI_MODEL,
@@ -18,8 +20,10 @@ import {
   isValidUuid,
   redactSecrets,
   safeAiError,
+  sanitizeApiKey,
   sanitizeUserMessage,
 } from '../lib/aiSecurity.js';
+import { verifyAiConnection } from '../lib/aiVerify.js';
 import { toolsForRole } from '../lib/aiTools.js';
 
 const ai = new Hono();
@@ -53,18 +57,169 @@ ai.get('/capabilities', auth, (c) => {
     },
     suggestions: user.role === 'operator'
       ? [
-          '¿Cuántos envíos pendientes hay hoy?',
+          '¿Hay pedidos nuevos sin asignar?',
+          'Muéstrame alertas operativas activas',
+          '¿Cuáles envíos están demorados?',
+          'Ranking de mensajeros esta semana',
+          'Estado en vivo de la flota',
           'Resumen de la semana',
-          'Lista los mensajeros activos',
-          'Busca envíos en tránsito',
-          '¿Cuánto llevamos facturado este mes?',
         ]
       : [
           '¿Cuáles son mis envíos activos?',
-          '¿Cómo confirmo una entrega?',
+          '¿Tengo mensajes sin leer?',
+          'Mi agenda de hoy',
           'Consejos para llegar más rápido',
         ],
+    proactive: true,
+    tools_count: tools.length,
   });
+});
+
+const DEFAULT_ALERT_PREFS = {
+  proactive_enabled: true,
+  new_orders: true,
+  assignments: true,
+  in_transit: true,
+  delivered: true,
+  cancelled: true,
+  new_messages: true,
+  delays: true,
+  ratings: true,
+  sound_enabled: true,
+};
+
+function eventAllowedByPrefs(event: TenantAiEvent, prefs: Record<string, boolean>): boolean {
+  if (!prefs.proactive_enabled) return false;
+  const map: Record<string, string> = {
+    new_order: 'new_orders',
+    assigned: 'assignments',
+    in_transit: 'in_transit',
+    delivered: 'delivered',
+    cancelled: 'cancelled',
+    new_message: 'new_messages',
+    delay_warning: 'delays',
+    unassigned: 'new_orders',
+    rating: 'ratings',
+    digest: 'proactive_enabled',
+  };
+  const key = map[event.type];
+  if (!key) return true;
+  return prefs[key] !== false;
+}
+
+// ── Stream proactivo (SSE) ───────────────────────────────────
+ai.get('/stream', auth, async (c) => {
+  const user = c.get('user');
+
+  return streamSSE(c, async (stream) => {
+    const [prefsRow] = await sql`
+      SELECT * FROM ai_alert_prefs WHERE user_id = ${user.sub}
+    `;
+    let prefs = { ...DEFAULT_ALERT_PREFS, ...(prefsRow ?? {}) };
+
+    const handler = (event: TenantAiEvent) => {
+      if (!eventAllowedByPrefs(event, prefs as Record<string, boolean>)) return;
+      stream.writeSSE({ event: 'alert', data: JSON.stringify(event) });
+    };
+
+    const unsub = subscribeTenantAi(user.tenant_id, user.role, user.sub, handler);
+    const ping = setInterval(() => {
+      stream.writeSSE({ event: 'ping', data: '{}' });
+    }, 20000);
+
+    stream.onAbort(() => {
+      clearInterval(ping);
+      unsub();
+    });
+
+    await new Promise(() => {});
+  });
+});
+
+// ── Preferencias de alertas ──────────────────────────────────
+ai.get('/alert-prefs', auth, async (c) => {
+  const user = c.get('user');
+  const [row] = await sql`SELECT * FROM ai_alert_prefs WHERE user_id = ${user.sub}`;
+  return c.json({ ...DEFAULT_ALERT_PREFS, ...(row ?? {}) });
+});
+
+ai.put('/alert-prefs', auth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<Partial<typeof DEFAULT_ALERT_PREFS>>();
+
+  const [row] = await sql`
+    INSERT INTO ai_alert_prefs (
+      user_id, tenant_id, proactive_enabled, new_orders, assignments,
+      in_transit, delivered, cancelled, new_messages, delays, ratings, sound_enabled, updated_at
+    ) VALUES (
+      ${user.sub}, ${user.tenant_id},
+      ${body.proactive_enabled ?? true},
+      ${body.new_orders ?? true},
+      ${body.assignments ?? true},
+      ${body.in_transit ?? true},
+      ${body.delivered ?? true},
+      ${body.cancelled ?? true},
+      ${body.new_messages ?? true},
+      ${body.delays ?? true},
+      ${body.ratings ?? true},
+      ${body.sound_enabled ?? true},
+      now()
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+      proactive_enabled = COALESCE(${body.proactive_enabled ?? null}, ai_alert_prefs.proactive_enabled),
+      new_orders = COALESCE(${body.new_orders ?? null}, ai_alert_prefs.new_orders),
+      assignments = COALESCE(${body.assignments ?? null}, ai_alert_prefs.assignments),
+      in_transit = COALESCE(${body.in_transit ?? null}, ai_alert_prefs.in_transit),
+      delivered = COALESCE(${body.delivered ?? null}, ai_alert_prefs.delivered),
+      cancelled = COALESCE(${body.cancelled ?? null}, ai_alert_prefs.cancelled),
+      new_messages = COALESCE(${body.new_messages ?? null}, ai_alert_prefs.new_messages),
+      delays = COALESCE(${body.delays ?? null}, ai_alert_prefs.delays),
+      ratings = COALESCE(${body.ratings ?? null}, ai_alert_prefs.ratings),
+      sound_enabled = COALESCE(${body.sound_enabled ?? null}, ai_alert_prefs.sound_enabled),
+      updated_at = now()
+    RETURNING *
+  `;
+  return c.json(row);
+});
+
+// ── Probar conexión (sin guardar) ────────────────────────────
+ai.post('/test', auth, async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'operator') return c.json({ error: 'Solo operadores' }, 403);
+
+  const body = await c.req.json<{
+    provider?: 'gemini' | 'openai';
+    gemini_api_key?: string;
+    openai_api_key?: string;
+    gemini_model?: string;
+    openai_model?: string;
+    use_env_fallback?: boolean;
+  }>();
+
+  const provider = body.provider ?? 'gemini';
+  const config = await loadAiConfig(user.tenant_id);
+
+  let apiKey = '';
+  if (provider === 'gemini') {
+    apiKey = body.gemini_api_key?.trim()
+      ? sanitizeApiKey(body.gemini_api_key)
+      : (config.gemini_api_key || ((body.use_env_fallback ?? config.use_env_fallback) ? process.env.GEMINI_API_KEY ?? '' : ''));
+  } else {
+    apiKey = body.openai_api_key?.trim()
+      ? sanitizeApiKey(body.openai_api_key)
+      : (config.openai_api_key || ((body.use_env_fallback ?? config.use_env_fallback) ? process.env.OPENAI_API_KEY ?? '' : ''));
+  }
+
+  if (!apiKey) {
+    return c.json({ ok: false, message: 'No hay API key. Pégala arriba o activa fallback del servidor.' }, 400);
+  }
+
+  const model = provider === 'gemini'
+    ? normalizeGeminiModel(body.gemini_model ?? config.gemini_model)
+    : normalizeOpenAiModel(body.openai_model ?? config.openai_model);
+
+  const result = await verifyAiConnection(provider, apiKey, model);
+  return c.json(result, result.ok ? 200 : 400);
 });
 
 // ── Settings (solo operador) ─────────────────────────────────
@@ -131,11 +286,14 @@ ai.put('/settings', auth, async (c) => {
   try {
     if (body.gemini_model) geminiModel = assertAllowedModel('gemini', body.gemini_model);
     if (body.openai_model) openaiModel = assertAllowedModel('openai', body.openai_model);
-    if (body.gemini_api_key?.trim()) assertValidApiKey('gemini', body.gemini_api_key.trim());
-    if (body.openai_api_key?.trim()) assertValidApiKey('openai', body.openai_api_key.trim());
+    if (body.gemini_api_key?.trim()) assertValidApiKey('gemini', body.gemini_api_key);
+    if (body.openai_api_key?.trim()) assertValidApiKey('openai', body.openai_api_key);
   } catch (err) {
     return c.json({ error: safeAiError(err) }, 400);
   }
+
+  const newGeminiPlain = body.gemini_api_key?.trim() ? sanitizeApiKey(body.gemini_api_key) : '';
+  const newOpenaiPlain = body.openai_api_key?.trim() ? sanitizeApiKey(body.openai_api_key) : '';
 
   const [existing] = await sql`
     SELECT gemini_api_key, openai_api_key, gemini_model, openai_model
@@ -146,16 +304,27 @@ ai.put('/settings', auth, async (c) => {
   let openaiKey = existing?.openai_api_key as string | null;
 
   if (body.clear_gemini_key) geminiKey = null;
-  else if (body.gemini_api_key?.trim()) geminiKey = encryptSecret(body.gemini_api_key.trim());
+  else if (newGeminiPlain) geminiKey = encryptSecret(newGeminiPlain);
 
   if (body.clear_openai_key) openaiKey = null;
-  else if (body.openai_api_key?.trim()) openaiKey = encryptSecret(body.openai_api_key.trim());
+  else if (newOpenaiPlain) openaiKey = encryptSecret(newOpenaiPlain);
 
   if (!body.gemini_model && existing?.gemini_model) {
     geminiModel = normalizeGeminiModel(existing.gemini_model as string);
   }
   if (!body.openai_model && existing?.openai_model) {
     openaiModel = normalizeOpenAiModel(existing.openai_model as string);
+  }
+
+  // Verificar solo cuando el usuario ingresa una clave nueva
+  if (newGeminiPlain) {
+    const verify = await verifyAiConnection('gemini', newGeminiPlain, geminiModel);
+    if (!verify.ok) return c.json({ error: verify.message }, 400);
+    if (verify.model_used !== geminiModel) geminiModel = verify.model_used;
+  }
+  if (newOpenaiPlain) {
+    const verify = await verifyAiConnection('openai', newOpenaiPlain, openaiModel);
+    if (!verify.ok) return c.json({ error: verify.message }, 400);
   }
 
   const [row] = await sql`
@@ -304,7 +473,9 @@ ai.post('/chat', auth, async (c) => {
       })),
     });
   } catch (err) {
-    return c.json({ error: safeAiError(err) }, 502);
+    console.error('[AI Chat]', err);
+    const msg = safeAiError(err);
+    return c.json({ error: msg }, msg.includes('desactivad') || msg.includes('Configura') ? 400 : 502);
   }
 
   reply = redactSecrets(reply);

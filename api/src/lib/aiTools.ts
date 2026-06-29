@@ -1,6 +1,7 @@
 import sql from '../db/index.js';
 import type { TokenPayload } from './tokens.js';
 import { assertAllowedToolName, sanitizeToolArgs } from './aiSecurity.js';
+import { EXTENDED_AI_TOOL_DEFINITIONS, executeExtendedAiTool } from './aiToolsExtended.js';
 
 export interface AiToolContext {
   user: TokenPayload;
@@ -62,6 +63,8 @@ export const AI_TOOL_DEFINITIONS = [
     },
   },
 ] as const;
+
+export const ALL_AI_TOOL_DEFINITIONS = [...AI_TOOL_DEFINITIONS, ...EXTENDED_AI_TOOL_DEFINITIONS];
 
 export async function executeAiTool(
   name: string,
@@ -232,16 +235,25 @@ export async function executeAiTool(
       return rows.map(r => ({ ...r, delivery_fee: Number(r.delivery_fee) }));
     }
 
-    default:
+    default: {
+      const extended = await executeExtendedAiTool(name, safeArgs, ctx);
+      if (extended !== null) return extended;
       return { error: `Herramienta desconocida: ${name}` };
+    }
   }
 }
 
+const MESSENGER_TOOLS = new Set([
+  'my_deliveries', 'search_delivery', 'get_dashboard_stats',
+  'get_delayed_deliveries', 'get_delivery_detail', 'get_customer_history',
+  'get_messenger_gps', 'get_unread_messages', 'get_today_agenda',
+  'get_delivery_timeline', 'get_avg_delivery_times', 'draft_whatsapp_message',
+  'get_scheduled_deliveries', 'get_ratings_report',
+]);
+
 export function toolsForRole(role: string) {
   if (role === 'messenger') {
-    return AI_TOOL_DEFINITIONS.filter(t =>
-      ['my_deliveries', 'search_delivery', 'get_dashboard_stats'].includes(t.name),
-    );
+    return ALL_AI_TOOL_DEFINITIONS.filter(t => MESSENGER_TOOLS.has(t.name));
   }
-  return AI_TOOL_DEFINITIONS.filter(t => t.name !== 'my_deliveries');
+  return ALL_AI_TOOL_DEFINITIONS.filter(t => t.name !== 'my_deliveries');
 }

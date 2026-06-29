@@ -6,6 +6,14 @@ import { sendCustomerTrackingEmail, sendMessengerAssignmentEmail, sendOperatorAl
 import { isValidUuid } from '../lib/validation.js';
 import { emitDeliveryEvent, setTyping } from '../lib/realtime.js';
 import { recordMessengerLocation } from '../lib/locationHistory.js';
+import {
+  aiAlertNewOrder,
+  aiAlertAssigned,
+  aiAlertInTransit,
+  aiAlertDelivered,
+  aiAlertCancelled,
+  aiAlertNewMessage,
+} from '../lib/aiAlerts.js';
 
 const deliveries = new Hono();
 
@@ -255,6 +263,25 @@ deliveries.post('/', auth, operatorOnly, async (c) => {
     }
   }
 
+  aiAlertNewOrder({
+    tenantId: user.tenant_id,
+    deliveryId: delivery.id,
+    customerName: cust.name,
+    messengerId: messenger_id ?? null,
+    fee: Number(delivery.delivery_fee),
+  }).catch(() => {});
+
+  if (messenger_id) {
+    const [m] = await sql`SELECT name FROM users WHERE id = ${messenger_id} LIMIT 1`;
+    aiAlertAssigned({
+      tenantId: user.tenant_id,
+      deliveryId: delivery.id,
+      customerName: cust.name,
+      messengerId: messenger_id,
+      messengerName: m?.name ?? null,
+    }).catch(() => {});
+  }
+
   return c.json({ ...delivery, customer: cust }, 201);
 });
 
@@ -431,6 +458,18 @@ deliveries.patch('/:id/assign', auth, operatorOnly, async (c) => {
         });
       }
     }).catch(err => console.error('[Email-Assign] Error:', err));
+
+    const [[cust], [messenger]] = await Promise.all([
+      sql`SELECT name FROM customers WHERE id = ${updated.customer_id} LIMIT 1`,
+      sql`SELECT name FROM users WHERE id = ${messenger_id} LIMIT 1`,
+    ]);
+    aiAlertAssigned({
+      tenantId: user.tenant_id,
+      deliveryId: id,
+      customerName: cust?.name ?? 'Cliente',
+      messengerId: messenger_id,
+      messengerName: messenger?.name ?? null,
+    }).catch(() => {});
   }
 
   return c.json(updated);
@@ -458,6 +497,17 @@ deliveries.patch('/:id/in-transit', auth, async (c) => {
     VALUES (${id}, 'in_transit', ${user.sub}, ${user.role})
   `;
   emitDeliveryEvent(id, { type: 'state', data: { state: 'in_transit' } });
+  const [[dInfo], [mInfo]] = await Promise.all([
+    sql`SELECT c.name AS customer_name FROM deliveries d JOIN customers c ON c.id = d.customer_id WHERE d.id = ${id}`,
+    sql`SELECT name FROM users WHERE id = ${delivery.messenger_id}`,
+  ]);
+  aiAlertInTransit({
+    tenantId: user.tenant_id,
+    deliveryId: id,
+    customerName: dInfo?.customer_name,
+    messengerId: delivery.messenger_id,
+    messengerName: mInfo?.name ?? null,
+  }).catch(() => {});
   return c.json({ state: 'in_transit' });
 });
 
@@ -485,6 +535,16 @@ deliveries.patch('/:id/deliver', auth, async (c) => {
     INSERT INTO delivery_events (delivery_id, state, actor_id, actor_role, note)
     VALUES (${id}, 'delivered', ${user.sub}, ${user.role}, ${note ?? null})
   `;
+  emitDeliveryEvent(id, { type: 'state', data: { state: 'delivered' } });
+  const [dInfo] = await sql`
+    SELECT c.name AS customer_name FROM deliveries d
+    JOIN customers c ON c.id = d.customer_id WHERE d.id = ${id}
+  `;
+  aiAlertDelivered({
+    tenantId: user.tenant_id,
+    deliveryId: id,
+    customerName: dInfo?.customer_name,
+  }).catch(() => {});
   return c.json({ state: 'delivered' });
 });
 
@@ -621,6 +681,14 @@ deliveries.post('/:id/messages', auth, async (c) => {
     RETURNING id, sender, message, created_at, read_at
   `;
   emitDeliveryEvent(id, { type: 'message', data: msg });
+  const [dRow] = await sql`SELECT messenger_id FROM deliveries WHERE id = ${id}`;
+  aiAlertNewMessage(
+    user.tenant_id,
+    id,
+    sender === 'messenger' ? 'Mensajero' : 'Operador',
+    message.trim(),
+    dRow?.messenger_id,
+  ).catch(() => {});
   return c.json(msg, 201);
 });
 
@@ -660,6 +728,19 @@ deliveries.patch('/:id/cancel', auth, operatorOnly, async (c) => {
       sendOperatorAlertEmail(`Envío Cancelado - #${info.id.slice(0,8).toUpperCase()}`, `Hola ${info.messenger_name}, el envío de ${info.customer_name} asignado a tu ruta ha sido cancelado.`);
     }
   }).catch(err => console.error('[Email-Cancel] Error:', err));
+
+  const [info] = await sql`
+    SELECT d.messenger_id, c.name AS customer_name
+    FROM deliveries d JOIN customers c ON c.id = d.customer_id
+    WHERE d.id = ${id} AND d.tenant_id = ${user.tenant_id}
+  `;
+  emitDeliveryEvent(id, { type: 'state', data: { state: 'cancelled' } });
+  aiAlertCancelled({
+    tenantId: user.tenant_id,
+    deliveryId: id,
+    customerName: info?.customer_name,
+    messengerId: info?.messenger_id,
+  }).catch(() => {});
 
   return c.json({ state: 'cancelled' });
 });

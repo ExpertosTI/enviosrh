@@ -1300,5 +1300,91 @@
   cursor: not-allowed;
 }
 
+.ai-fab-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #ef4444 !important;
+  color: #fff !important;
+  font-size: 0.65rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #0f0f18;
+}
+.ai-fab-live {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #22c55e !important;
+  border: 2px solid #0f0f18;
+  animation: ai-pulse 2s ease-in-out infinite;
+}
+@keyframes ai-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+.ai-msg.is-alert .ai-msg-bubble {
+  background: rgba(251, 191, 36, 0.12) !important;
+  border: 1px solid rgba(251, 191, 36, 0.35) !important;
+  color: #fde68a !important;
+}
+.ai-alert-action {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #93c5fd !important;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.ai-prefs-panel {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ai-pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: #c4c4d4 !important;
+  cursor: pointer;
+}
+.ai-pref-row input { accent-color: #5b8af9; }
 
+.ai-error-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.72rem;
+  color: #fca5a5 !important;
+  background: rgba(239, 68, 68, 0.1);
+  border-top: 1px solid rgba(239, 68, 68, 0.2);
+}
+.ai-retry-btn {
+  border: 0;
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca !important;
+  font-size: 0.68rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
 

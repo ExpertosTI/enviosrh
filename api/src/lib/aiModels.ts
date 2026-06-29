@@ -7,14 +7,14 @@ export interface ModelOption {
 }
 
 export const GEMINI_MODELS: ModelOption[] = [
-  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — flagship agentes (2026)', tier: 'recommended' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — equilibrio precio/rendimiento', tier: 'fast' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — recomendado, estable', tier: 'recommended' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — agentes avanzados', tier: 'pro' },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — ultra rápido', tier: 'fast' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — razonamiento avanzado', tier: 'pro' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — razonamiento profundo', tier: 'pro' },
 ];
 
 export const OPENAI_MODELS: ModelOption[] = [
-  { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini — recomendado (2026)', tier: 'recommended' },
+  { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini — recomendado', tier: 'recommended' },
   { id: 'gpt-4.1', label: 'GPT-4.1 — máxima calidad', tier: 'pro' },
   { id: 'gpt-4o-mini', label: 'GPT-4o mini — económico', tier: 'fast' },
   { id: 'gpt-4o', label: 'GPT-4o — multimodal', tier: 'pro' },

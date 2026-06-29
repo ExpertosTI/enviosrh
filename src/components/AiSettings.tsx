@@ -19,6 +19,13 @@ interface AiSettingsData {
   openai_key_masked: string;
 }
 
+interface VerifyResult {
+  ok: boolean;
+  message: string;
+  model_used?: string;
+  latency_ms?: number;
+}
+
 export function AiSettings() {
   const [geminiModels, setGeminiModels] = useState<ModelOption[]>([]);
   const [openaiModels, setOpenaiModels] = useState<ModelOption[]>([]);
@@ -32,14 +39,16 @@ export function AiSettings() {
     use_env_fallback: true,
   });
   const [masked, setMasked] = useState({ gemini: '', openai: '', geminiSet: false, openaiSet: false });
+  const [editGeminiKey, setEditGeminiKey] = useState(false);
+  const [editOpenaiKey, setEditOpenaiKey] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err' | 'info'; text: string } | null>(null);
 
   useEffect(() => {
     api.get<{
       gemini_models: ModelOption[];
       openai_models: ModelOption[];
-      default_models: { gemini: string; openai: string };
     }>('/ai/capabilities').then((c) => {
       setGeminiModels(c.gemini_models);
       setOpenaiModels(c.openai_models);
@@ -63,10 +72,36 @@ export function AiSettings() {
     }).catch(() => {});
   }, []);
 
+  async function testConnection() {
+    setTesting(true);
+    setMsg(null);
+    try {
+      const res = await api.post<VerifyResult>('/ai/test', {
+        provider: form.provider,
+        gemini_api_key: editGeminiKey ? form.gemini_api_key : undefined,
+        openai_api_key: editOpenaiKey ? form.openai_api_key : undefined,
+        gemini_model: form.gemini_model,
+        openai_model: form.openai_model,
+        use_env_fallback: form.use_env_fallback,
+      });
+      setMsg({
+        type: res.ok ? 'ok' : 'err',
+        text: res.message + (res.latency_ms ? ` (${res.latency_ms}ms)` : ''),
+      });
+      if (res.ok && res.model_used && form.provider === 'gemini' && res.model_used !== form.gemini_model) {
+        setForm(f => ({ ...f, gemini_model: res.model_used! }));
+      }
+    } catch (err) {
+      setMsg({ type: 'err', text: err instanceof Error ? err.message : 'Error de conexión' });
+    } finally {
+      setTesting(false);
+    }
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setMsg('');
+    setMsg(null);
     try {
       const payload: Record<string, unknown> = {
         enabled: form.enabled,
@@ -75,8 +110,12 @@ export function AiSettings() {
         openai_model: form.openai_model,
         use_env_fallback: form.use_env_fallback,
       };
-      if (form.gemini_api_key.trim()) payload.gemini_api_key = form.gemini_api_key.trim();
-      if (form.openai_api_key.trim()) payload.openai_api_key = form.openai_api_key.trim();
+      if (editGeminiKey && form.gemini_api_key.trim()) {
+        payload.gemini_api_key = form.gemini_api_key.trim();
+      }
+      if (editOpenaiKey && form.openai_api_key.trim()) {
+        payload.openai_api_key = form.openai_api_key.trim();
+      }
 
       const res = await api.put<{
         gemini_key_masked: string;
@@ -98,9 +137,11 @@ export function AiSettings() {
         gemini_model: res.gemini_model,
         openai_model: res.openai_model,
       }));
-      setMsg('Configuración IA guardada');
+      setEditGeminiKey(false);
+      setEditOpenaiKey(false);
+      setMsg({ type: 'ok', text: 'Configuración guardada correctamente' });
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : 'Error al guardar');
+      setMsg({ type: 'err', text: err instanceof Error ? err.message : 'Error al guardar' });
     } finally {
       setSaving(false);
     }
@@ -114,7 +155,7 @@ export function AiSettings() {
             <span className="text-lg">✦</span> Asistente IA
           </div>
           <p className="text-[10px] text-[#6b6b8a] mt-1">
-            Modelos 2026 · Gemini 2.5/3.5 y GPT-4.1. Claves cifradas AES-256.
+            Gemini gratis en AI Studio · 30+ herramientas operativas
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-[#e8e8f4] shrink-0">
@@ -134,26 +175,32 @@ export function AiSettings() {
           value={form.provider}
           onChange={e => setForm({ ...form, provider: e.target.value as 'gemini' | 'openai' })}
         >
-          <option value="gemini">Google Gemini (tier gratuito AI Studio)</option>
+          <option value="gemini">Google Gemini (gratis — AI Studio)</option>
           <option value="openai">OpenAI</option>
         </select>
       </label>
 
       <div className="grid md:grid-cols-2 gap-3">
-        <label className="text-xs text-[#6b6b8a]">
+        <div className="text-xs text-[#6b6b8a]">
           API Key Google AI Studio
-          {masked.geminiSet && (
-            <span className="block text-[10px] text-[#22c55e] mt-0.5">Configurada: {masked.gemini}</span>
+          {masked.geminiSet && !editGeminiKey ? (
+            <div className="mt-1 flex items-center gap-2">
+              <span className="input flex-1 text-[#22c55e] text-[11px]">{masked.gemini || '••••••••'}</span>
+              <button type="button" className="btn-secondary text-[10px] px-2 py-1" onClick={() => setEditGeminiKey(true)}>
+                Cambiar
+              </button>
+            </div>
+          ) : (
+            <input
+              type="password"
+              className="input mt-1"
+              placeholder="Pega tu key de AI Studio (AQ.…)"
+              value={form.gemini_api_key}
+              onChange={e => setForm({ ...form, gemini_api_key: e.target.value })}
+              autoComplete="off"
+            />
           )}
-          <input
-            type="password"
-            className="input mt-1"
-            placeholder="AIza…"
-            value={form.gemini_api_key}
-            onChange={e => setForm({ ...form, gemini_api_key: e.target.value })}
-            autoComplete="off"
-          />
-        </label>
+        </div>
         <label className="text-xs text-[#6b6b8a]">
           Modelo Gemini
           <select
@@ -171,20 +218,26 @@ export function AiSettings() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-3">
-        <label className="text-xs text-[#6b6b8a]">
+        <div className="text-xs text-[#6b6b8a]">
           API Key OpenAI
-          {masked.openaiSet && (
-            <span className="block text-[10px] text-[#22c55e] mt-0.5">Configurada: {masked.openai}</span>
+          {masked.openaiSet && !editOpenaiKey ? (
+            <div className="mt-1 flex items-center gap-2">
+              <span className="input flex-1 text-[#22c55e] text-[11px]">{masked.openai || '••••••••'}</span>
+              <button type="button" className="btn-secondary text-[10px] px-2 py-1" onClick={() => setEditOpenaiKey(true)}>
+                Cambiar
+              </button>
+            </div>
+          ) : (
+            <input
+              type="password"
+              className="input mt-1"
+              placeholder="sk-… (opcional)"
+              value={form.openai_api_key}
+              onChange={e => setForm({ ...form, openai_api_key: e.target.value })}
+              autoComplete="off"
+            />
           )}
-          <input
-            type="password"
-            className="input mt-1"
-            placeholder="sk-…"
-            value={form.openai_api_key}
-            onChange={e => setForm({ ...form, openai_api_key: e.target.value })}
-            autoComplete="off"
-          />
-        </label>
+        </div>
         <label className="text-xs text-[#6b6b8a]">
           Modelo OpenAI
           <select
@@ -215,17 +268,30 @@ export function AiSettings() {
         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-[#5b8af9]">
           aistudio.google.com/apikey
         </a>
-        . Los modelos 2.0 y 1.5 están deprecados y se migran automáticamente.
+        {' '}→ Crear clave → copiar completa (formato AQ.…) → Probar conexión → Guardar.
       </p>
 
       {msg && (
-        <p className={`text-xs ${msg.includes('Error') || msg.includes('inválid') ? 'text-red-400' : 'text-[#22c55e]'}`}>
-          {msg}
+        <p className={`text-xs leading-relaxed ${
+          msg.type === 'ok' ? 'text-[#22c55e]' : msg.type === 'err' ? 'text-red-400' : 'text-[#93c5fd]'
+        }`}>
+          {msg.text}
         </p>
       )}
-      <button type="submit" disabled={saving} className="btn-primary text-xs w-full">
-        {saving ? 'Guardando…' : 'Guardar configuración IA'}
-      </button>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={testing || saving}
+          onClick={testConnection}
+          className="btn-secondary text-xs flex-1"
+        >
+          {testing ? 'Probando…' : '⚡ Probar conexión'}
+        </button>
+        <button type="submit" disabled={saving || testing} className="btn-primary text-xs flex-1">
+          {saving ? 'Guardando…' : 'Guardar'}
+        </button>
+      </div>
     </form>
   );
 }
