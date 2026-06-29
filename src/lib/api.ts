@@ -15,6 +15,12 @@ export function clearToken() {
   localStorage.removeItem('enviosrh_user');
 }
 
+function apiErrorMessage(data: Record<string, unknown>, status: number): string {
+  const err = data.error ?? data.message;
+  if (typeof err === 'string' && err.trim()) return err;
+  return `Error ${status}`;
+}
+
 async function apiCall<T>(method: string, path: string, body?: unknown): Promise<T> {
   const url = `${getBaseUrl()}${path}`;
   const token = getToken();
@@ -28,14 +34,14 @@ async function apiCall<T>(method: string, path: string, body?: unknown): Promise
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) throw new Error(apiErrorMessage(data, res.status));
     return data as T;
   }
 
   const res = await CapacitorHttp.request({
     url,
-    method: method as 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: method as 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -43,7 +49,8 @@ async function apiCall<T>(method: string, path: string, body?: unknown): Promise
     data: body,
   });
   if (res.status >= 200 && res.status < 300) return res.data as T;
-  throw new Error(res.data?.error || `Error ${res.status}`);
+  const data = (res.data ?? {}) as Record<string, unknown>;
+  throw new Error(apiErrorMessage(data, res.status));
 }
 
 export const api = {

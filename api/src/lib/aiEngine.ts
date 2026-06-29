@@ -288,7 +288,7 @@ export async function runAiChat(opts: {
   if (!apiKey) {
     throw new Error(
       provider === 'gemini'
-        ? 'Configura tu API key de Google Gemini en Ajustes → IA (o activa fallback del servidor)'
+        ? 'Falta API key de Gemini. Ve a Ajustes → IA, pega tu key AQ.… y guarda (o configura GEMINI_API_KEY en el servidor).'
         : 'Configura tu API key de OpenAI en Ajustes → IA',
     );
   }

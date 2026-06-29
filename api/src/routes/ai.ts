@@ -210,17 +210,24 @@ ai.post('/test', auth, async (c) => {
 
   let apiKey = '';
   if (provider === 'gemini') {
-    apiKey = body.gemini_api_key?.trim()
-      ? sanitizeApiKey(body.gemini_api_key)
-      : (config.gemini_api_key || ((body.use_env_fallback ?? config.use_env_fallback) ? process.env.GEMINI_API_KEY ?? '' : ''));
+    const typed = body.gemini_api_key?.trim() ? sanitizeApiKey(body.gemini_api_key) : '';
+    apiKey = typed
+      || config.gemini_api_key
+      || ((body.use_env_fallback ?? config.use_env_fallback) ? process.env.GEMINI_API_KEY ?? '' : '');
   } else {
-    apiKey = body.openai_api_key?.trim()
-      ? sanitizeApiKey(body.openai_api_key)
-      : (config.openai_api_key || ((body.use_env_fallback ?? config.use_env_fallback) ? process.env.OPENAI_API_KEY ?? '' : ''));
+    const typed = body.openai_api_key?.trim() ? sanitizeApiKey(body.openai_api_key) : '';
+    apiKey = typed
+      || config.openai_api_key
+      || ((body.use_env_fallback ?? config.use_env_fallback) ? process.env.OPENAI_API_KEY ?? '' : '');
   }
 
   if (!apiKey) {
-    return c.json({ ok: false, message: 'No hay API key. Pégala arriba o activa fallback del servidor.' }, 400);
+    const hint = provider === 'gemini'
+      ? (body.use_env_fallback !== false
+        ? 'Pega tu key AQ.… arriba o agrega GEMINI_API_KEY=AQ.… al .env del servidor y redeploy.'
+        : 'Pega tu key AQ.… de AI Studio arriba.')
+      : 'Configura tu API key de OpenAI.';
+    return c.json({ ok: false, message: hint, error: hint }, 400);
   }
 
   const model = provider === 'gemini'
@@ -228,7 +235,10 @@ ai.post('/test', auth, async (c) => {
     : normalizeOpenAiModel(body.openai_model ?? config.openai_model);
 
   const result = await verifyAiConnection(provider, apiKey, model);
-  return c.json(result, result.ok ? 200 : 400);
+  if (!result.ok) {
+    return c.json({ ...result, error: result.message }, 400);
+  }
+  return c.json(result);
   } catch (err) {
     console.error('[ai/test]', err);
     return c.json({ ok: false, message: safeAiError(err) }, 500);
@@ -258,6 +268,8 @@ ai.get('/settings', auth, async (c) => {
       use_env_fallback: true,
       gemini_key_set: hasEnvGemini,
       openai_key_set: hasEnvOpenai,
+      env_gemini_configured: hasEnvGemini,
+      env_openai_configured: hasEnvOpenai,
       gemini_key_masked: hasEnvGemini ? maskSecret(process.env.GEMINI_API_KEY) : '',
       openai_key_masked: hasEnvOpenai ? maskSecret(process.env.OPENAI_API_KEY) : '',
       updated_at: null,
@@ -272,6 +284,8 @@ ai.get('/settings', auth, async (c) => {
     use_env_fallback: row.use_env_fallback,
     gemini_key_set: Boolean(row.gemini_api_key) || hasEnvGemini,
     openai_key_set: Boolean(row.openai_api_key) || hasEnvOpenai,
+    env_gemini_configured: hasEnvGemini,
+    env_openai_configured: hasEnvOpenai,
     gemini_key_masked: maskSecret(row.gemini_api_key as string) || (hasEnvGemini ? maskSecret(process.env.GEMINI_API_KEY) : ''),
     openai_key_masked: maskSecret(row.openai_api_key as string) || (hasEnvOpenai ? maskSecret(process.env.OPENAI_API_KEY) : ''),
     updated_at: row.updated_at,

@@ -15,6 +15,8 @@ interface AiSettingsData {
   use_env_fallback: boolean;
   gemini_key_set: boolean;
   openai_key_set: boolean;
+  env_gemini_configured?: boolean;
+  env_openai_configured?: boolean;
   gemini_key_masked: string;
   openai_key_masked: string;
 }
@@ -39,6 +41,7 @@ export function AiSettings() {
     use_env_fallback: true,
   });
   const [masked, setMasked] = useState({ gemini: '', openai: '', geminiSet: false, openaiSet: false });
+  const [envStatus, setEnvStatus] = useState({ gemini: false, openai: false });
   const [editGeminiKey, setEditGeminiKey] = useState(false);
   const [editOpenaiKey, setEditOpenaiKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,6 +72,10 @@ export function AiSettings() {
         geminiSet: d.gemini_key_set,
         openaiSet: d.openai_key_set,
       });
+      setEnvStatus({
+        gemini: Boolean(d.env_gemini_configured),
+        openai: Boolean(d.env_openai_configured),
+      });
     }).catch(() => {});
   }, []);
 
@@ -78,8 +85,8 @@ export function AiSettings() {
     try {
       const res = await api.post<VerifyResult>('/ai/test', {
         provider: form.provider,
-        gemini_api_key: editGeminiKey ? form.gemini_api_key : undefined,
-        openai_api_key: editOpenaiKey ? form.openai_api_key : undefined,
+        gemini_api_key: (editGeminiKey || form.gemini_api_key.trim()) ? form.gemini_api_key : undefined,
+        openai_api_key: (editOpenaiKey || form.openai_api_key.trim()) ? form.openai_api_key : undefined,
         gemini_model: form.gemini_model,
         openai_model: form.openai_model,
         use_env_fallback: form.use_env_fallback,
@@ -111,6 +118,8 @@ export function AiSettings() {
         use_env_fallback: form.use_env_fallback,
       };
       if (editGeminiKey && form.gemini_api_key.trim()) {
+        payload.gemini_api_key = form.gemini_api_key.trim();
+      } else if (form.gemini_api_key.trim()) {
         payload.gemini_api_key = form.gemini_api_key.trim();
       }
       if (editOpenaiKey && form.openai_api_key.trim()) {
@@ -179,6 +188,13 @@ export function AiSettings() {
           <option value="openai">OpenAI</option>
         </select>
       </label>
+
+      {form.provider === 'gemini' && form.use_env_fallback && !envStatus.gemini && !masked.geminiSet && (
+        <p className="text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 leading-relaxed">
+          El servidor <strong>no tiene</strong> GEMINI_API_KEY en el .env. Pega tu key <code className="text-[10px]">AQ.…</code> abajo
+          o en el VPS: <code className="text-[10px]">nano /opt/enviosrh/.env</code> → <code className="text-[10px]">GEMINI_API_KEY=AQ.tu_key</code> → deploy.
+        </p>
+      )}
 
       <div className="grid md:grid-cols-2 gap-3">
         <div className="text-xs text-[#6b6b8a]">
