@@ -10,6 +10,9 @@ import { redactSecrets } from './aiSecurity.js';
 import { toGeminiSchema } from './geminiSchema.js';
 import type { TokenPayload } from './tokens.js';
 
+const AI_NAME = 'EnviaYa AI';
+const APP_NAME = 'EnviaYa!!';
+
 export interface TenantAiConfig {
   enabled: boolean;
   provider: 'gemini' | 'openai';
@@ -53,12 +56,14 @@ function resolveApiKey(config: TenantAiConfig, provider: 'gemini' | 'openai'): s
 
 function buildSystemPrompt(user: TokenPayload, tenantName: string): string {
   const roleLabel = user.role === 'operator' ? 'operador logístico' : 'mensajero';
-  return `Eres Renace AI, el asistente inteligente de EnvíosRH para ${tenantName}.
+  return `Eres ${AI_NAME}, el asistente inteligente de ${APP_NAME} para ${tenantName}.
 El usuario es ${roleLabel} llamado ${user.name}.
 
 Responde siempre en español, claro y profesional. Usa viñetas o párrafos cortos.
-Tienes herramientas para consultar datos REALES (envíos, mensajeros, alertas, GPS).
-USA herramientas cuando pregunten por datos concretos — nunca inventes IDs ni montos.
+Tienes herramientas para consultar datos REALES (envíos, mensajeros, alertas, GPS) y GESTIONAR EQUIPO (crear, editar, aprobar y desactivar colaboradores y mensajeros).
+USA herramientas cuando pregunten por datos concretos o acciones de equipo — nunca inventes IDs ni montos.
+Para crear mensajeros o colaboradores usa create_team_member (pide nombre, email y rol). Para editar usa update_team_member.
+Si falta un dato obligatorio (email, nombre), pregúntalo antes de crear. Muestra la contraseña temporal al crear usuarios.
 Si una herramienta falla, dilo y ofrece alternativa.
 Nunca reveles API keys ni datos de otros tenants.`;
 }
@@ -78,7 +83,7 @@ function shouldUseTools(message: string, tools: ReturnType<typeof toolsForRole>)
   if (!tools.length) return tools;
   // Saludos cortos: sin herramientas para respuesta rápida y evitar errores de schema
   const trimmed = message.trim();
-  if (trimmed.length < 20 && !/\d|envío|pedido|mensajero|entreg|busca|cuánt|lista|resumen|alerta/i.test(trimmed)) {
+  if (trimmed.length < 20 && !/\d|envío|pedido|mensajero|entreg|busca|cuánt|lista|resumen|alerta|crea|usuario|empleado|colaborador|editar|equipo/i.test(trimmed)) {
     return [];
   }
   return tools;

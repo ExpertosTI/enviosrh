@@ -48,7 +48,7 @@ auth.post('/login', async (c) => {
            t.primary_color AS tenant_primary_color, t.secondary_color AS tenant_secondary_color,
            t.accent_color AS tenant_accent_color, t.theme_mode AS tenant_theme_mode,
            t.contact_email AS tenant_contact_email, t.contact_phone AS tenant_contact_phone,
-           t.address AS tenant_address
+           t.address AS tenant_address, t.latitude AS tenant_latitude, t.longitude AS tenant_longitude
     FROM users u
     JOIN tenants t ON t.id = u.tenant_id
     WHERE u.email = ${usernameOrEmail.trim().toLowerCase()}
@@ -88,6 +88,8 @@ auth.post('/login', async (c) => {
         contact_email: user.tenant_contact_email,
         contact_phone: user.tenant_contact_phone,
         address: user.tenant_address,
+        latitude: user.tenant_latitude,
+        longitude: user.tenant_longitude,
       }
     }
   });

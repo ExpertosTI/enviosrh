@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { saveSession } from '../lib/auth';
 import { IconPackage } from '../components/Icons';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { APP_NAME, COMPANY_LEGAL, APP_TAGLINE } from '../lib/brand';
 
 export function Login() {
   const nav = useNavigate();
@@ -49,9 +50,9 @@ export function Login() {
             <IconPackage size={28} color="#5b8af9" />
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-bold text-[#e8e8f4] tracking-tight">Envíos App</h1>
-            <p className="text-[10px] text-[#5b8af9] font-bold uppercase tracking-wider mt-0.5">by Renace.tech</p>
-            <p className="text-xs text-[#6b6b8a] mt-0.5">Plataforma de gestión de envíos</p>
+            <h1 className="text-xl font-bold text-[#e8e8f4] tracking-tight">{APP_NAME}</h1>
+            <p className="text-[10px] text-[#5b8af9] font-bold uppercase tracking-wider mt-0.5">by {COMPANY_LEGAL}</p>
+            <p className="text-xs text-[#6b6b8a] mt-0.5">{APP_TAGLINE}</p>
           </div>
         </div>
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { applyTenantTheme } from '../../lib/theme';
 import { getSession, saveSession } from '../../lib/auth';
+import { captureMyLocation } from '../../lib/geolocation';
 import type { Tenant } from '../../types';
 import { IconPackage } from '../../components/Icons';
 
@@ -11,6 +12,7 @@ export function TenantSettings() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
 
   const [form, setForm] = useState<Omit<Tenant, 'id' | 'slug' | 'created_at' | 'updated_at'> & { custom_domain?: string }>({
     name: '',
@@ -22,6 +24,8 @@ export function TenantSettings() {
     contact_email: '',
     contact_phone: '',
     address: '',
+    latitude: null,
+    longitude: null,
     custom_domain: '',
     favicon_url: null,
   });
@@ -39,6 +43,8 @@ export function TenantSettings() {
           contact_email: data.contact_email ?? '',
           contact_phone: data.contact_phone ?? '',
           address: data.address ?? '',
+          latitude: data.latitude ?? null,
+          longitude: data.longitude ?? null,
           custom_domain: data.custom_domain ?? '',
           favicon_url: data.favicon_url ?? null,
         });
@@ -66,6 +72,20 @@ export function TenantSettings() {
     };
     reader.readAsDataURL(file);
   };
+
+  async function useMyLocation() {
+    setLocating(true);
+    setError('');
+    try {
+      const { lat, lng } = await captureMyLocation();
+      setForm(prev => ({ ...prev, latitude: lat, longitude: lng }));
+      setSuccess('Ubicación GPS capturada. Guarda para aplicar.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo obtener la ubicación');
+    } finally {
+      setLocating(false);
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,6 +194,26 @@ export function TenantSettings() {
               placeholder="contacto@empresa.com"
               disabled={saving}
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5" data-tour="tenant-location">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted">Ubicación de despacho (GPS)</label>
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                type="button"
+                onClick={useMyLocation}
+                disabled={saving || locating}
+                className="btn btn-secondary text-xs"
+              >
+                {locating ? 'Obteniendo GPS…' : '📍 Usar mi ubicación'}
+              </button>
+              {form.latitude != null && form.longitude != null && (
+                <span className="text-[10px] text-[#22c55e] font-mono">
+                  {form.latitude.toFixed(5)}, {form.longitude.toFixed(5)}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-muted">Punto de salida para rutas y distancias al crear envíos.</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -337,7 +377,7 @@ export function TenantSettings() {
                   <IconPackage size={12} className="text-primary" />
                 </div>
               )}
-              <span className="font-extrabold text-[11px] tracking-tight">{form.name || 'EnvíosRH'}</span>
+              <span className="font-extrabold text-[11px] tracking-tight">{form.name || 'Mi empresa'}</span>
             </div>
             <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-ping" />
           </div>

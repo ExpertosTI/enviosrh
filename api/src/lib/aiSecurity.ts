@@ -34,7 +34,16 @@ const EXTENDED_TOOL_NAMES = [
   'get_scheduled_deliveries',
 ];
 
-const TOOL_NAMES = new Set([...BASE_TOOL_NAMES, ...EXTENDED_TOOL_NAMES]);
+const USER_TOOL_NAMES = [
+  'list_team_members',
+  'search_team_member',
+  'create_team_member',
+  'update_team_member',
+  'approve_team_member',
+  'deactivate_team_member',
+];
+
+const TOOL_NAMES = new Set([...BASE_TOOL_NAMES, ...EXTENDED_TOOL_NAMES, ...USER_TOOL_NAMES]);
 
 const MAX_MESSAGE_LEN = 4000;
 const MAX_SEARCH_QUERY = 120;
@@ -165,6 +174,45 @@ export function sanitizeToolArgs(name: string, args: Record<string, unknown>): R
   if (name === 'draft_whatsapp_message') {
     const tone = String(args.tone ?? 'amigable').trim().toLowerCase();
     if (['formal', 'amigable', 'urgente'].includes(tone)) clean.tone = tone;
+  }
+
+  if (name === 'list_team_members') {
+    clean.limit = clampInt(args.limit, 20, 1, 30);
+    const role = String(args.role ?? 'all').trim().toLowerCase();
+    if (['messenger', 'operator', 'pending', 'all'].includes(role)) clean.role = role;
+  }
+
+  if (name === 'search_team_member') {
+    clean.query = String(args.query ?? '').trim().slice(0, MAX_SEARCH_QUERY);
+  }
+
+  if (name === 'create_team_member') {
+    clean.name = String(args.name ?? '').trim().slice(0, 80);
+    clean.email = String(args.email ?? '').trim().slice(0, 120);
+    if (args.phone) clean.phone = String(args.phone).trim().slice(0, 30);
+    const role = String(args.role ?? '').trim().toLowerCase();
+    if (role === 'messenger' || role === 'operator') clean.role = role;
+  }
+
+  if (name === 'update_team_member' || name === 'approve_team_member' || name === 'deactivate_team_member') {
+    const id = String(args.user_id ?? '').trim();
+    if (isValidUuid(id)) clean.user_id = id;
+    if (name === 'update_team_member') {
+      if (args.name !== undefined) clean.name = String(args.name).trim().slice(0, 80);
+      if (args.email !== undefined) clean.email = String(args.email).trim().slice(0, 120);
+      if (args.phone !== undefined) clean.phone = String(args.phone).trim().slice(0, 30);
+      if (args.role !== undefined) {
+        const r = String(args.role).trim().toLowerCase();
+        if (['operator', 'messenger', 'pending'].includes(r)) clean.role = r;
+      }
+      if (args.active !== undefined) clean.active = Boolean(args.active);
+      if (args.status !== undefined) clean.status = String(args.status).trim().slice(0, 40);
+      if (args.password !== undefined) clean.password = String(args.password).slice(0, 64);
+    }
+    if (name === 'approve_team_member') {
+      const r = String(args.role ?? '').trim().toLowerCase();
+      if (r === 'messenger' || r === 'operator') clean.role = r;
+    }
   }
 
   return clean;

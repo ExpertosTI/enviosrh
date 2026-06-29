@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
+import { AI_NAME } from '../lib/brand';
 import { connectAiStream, type AiAlertPrefs, type TenantAiEvent } from '../lib/aiStream';
 
 interface Message {
@@ -182,7 +183,7 @@ export function AiAssistant() {
               <div className="ai-panel-title">
                 <span className="ai-orb" />
                 <div>
-                  <strong>Renace AI</strong>
+                  <strong>{AI_NAME}</strong>
                   <span>
                     {prefs?.proactive_enabled ? '● En vivo — alertas activas' : 'Consulta envíos y operación'}
                   </span>

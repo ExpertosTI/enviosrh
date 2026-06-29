@@ -58,11 +58,11 @@ ai.get('/capabilities', auth, (c) => {
     suggestions: user.role === 'operator'
       ? [
           '¿Hay pedidos nuevos sin asignar?',
-          'Muéstrame alertas operativas activas',
+          'Créame un mensajero llamado Juan Pérez',
+          'Lista todos los colaboradores del equipo',
           '¿Cuáles envíos están demorados?',
           'Ranking de mensajeros esta semana',
           'Estado en vivo de la flota',
-          'Resumen de la semana',
         ]
       : [
           '¿Cuáles son mis envíos activos?',
@@ -353,22 +353,12 @@ ai.put('/settings', auth, async (c) => {
     openaiKey = (existing?.openai_api_key as string | null) ?? null;
   }
 
+  // Verificación solo con botón «Probar conexión» — guardar es instantáneo
   if (!body.gemini_model && existing?.gemini_model) {
     geminiModel = normalizeGeminiModel(existing.gemini_model as string);
   }
   if (!body.openai_model && existing?.openai_model) {
     openaiModel = normalizeOpenAiModel(existing.openai_model as string);
-  }
-
-  // Verificar solo cuando el usuario ingresa una clave nueva
-  if (newGeminiPlain) {
-    const verify = await verifyAiConnection('gemini', newGeminiPlain, geminiModel);
-    if (!verify.ok) return c.json({ error: verify.message }, 400);
-    if (verify.model_used !== geminiModel) geminiModel = verify.model_used;
-  }
-  if (newOpenaiPlain) {
-    const verify = await verifyAiConnection('openai', newOpenaiPlain, openaiModel);
-    if (!verify.ok) return c.json({ error: verify.message }, 400);
   }
 
   const [row] = await sql`

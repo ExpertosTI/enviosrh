@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { publicApi, uploadFile } from '../lib/api';
 import { IconPackage, IconUser } from '../components/Icons';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { APP_NAME, COMPANY_LEGAL, APP_TAGLINE } from '../lib/brand';
 
 export function Register() {
   const navigate = useNavigate();
@@ -85,8 +86,9 @@ export function Register() {
             <IconPackage size={32} color="#5b8af9" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-black text-[#e8e8f4] tracking-tight">Envíos App</h1>
-            <p className="text-[11px] text-[#5b8af9] font-bold uppercase tracking-widest mt-1">by Renace.tech</p>
+            <h1 className="text-2xl font-black text-[#e8e8f4] tracking-tight">{APP_NAME}</h1>
+            <p className="text-[11px] text-[#5b8af9] font-bold uppercase tracking-widest mt-1">by {COMPANY_LEGAL}</p>
+            <p className="text-[10px] text-[#6b6b8a] mt-1">{APP_TAGLINE}</p>
           </div>
         </div>
 

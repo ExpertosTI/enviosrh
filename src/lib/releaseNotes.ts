@@ -1,5 +1,5 @@
 /** Incrementar en cada release con novedades visibles para el usuario */
-export const APP_RELEASE = '3.4.0';
+export const APP_RELEASE = '3.5.0';
 
 export interface ReleaseHighlight {
   icon: string;
@@ -13,8 +13,17 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: Record<string, ReleaseNote> = {
+  '3.5.0': {
+    title: 'EnviaYa!! — Super App',
+    tagline: 'Multi-equipo, ubicación GPS y onboarding completo',
+    highlights: [
+      { icon: '🚀', text: 'Nueva marca EnviaYa!! para toda tu operación' },
+      { icon: '📍', text: 'GPS de empresa y «Mi ubicación» al crear envíos' },
+      { icon: '👥', text: 'Tour ampliado: empresa, equipo, colaboradores y mensajeros' },
+    ],
+  },
   '3.4.0': {
-    title: 'Renace AI integrado',
+    title: 'EnviaYa AI integrado',
     tagline: 'Tu copiloto inteligente para envíos y operaciones',
     highlights: [
       { icon: '🤖', text: 'Asistente IA con Google Gemini u OpenAI' },

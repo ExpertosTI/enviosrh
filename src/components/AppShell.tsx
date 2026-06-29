@@ -8,6 +8,7 @@ import {
 import { ThemeToggle } from './ThemeToggle';
 import { AiAssistant } from './AiAssistant';
 import { useI18n } from '../lib/i18n';
+import { APP_NAME, COMPANY_LEGAL } from '../lib/brand';
 
 interface NavItem {
   to: string;
@@ -164,8 +165,8 @@ export function AppShell({ children, nav }: AppShellProps) {
             <IconPackage size={18} color="#5b8af9" />
           </div>
           <div className="flex-1 min-w-0">
-            <span className="font-bold text-sm text-[#e8e8f4] tracking-tight block leading-none">Envíos App</span>
-            <span className="text-[9px] text-[#5b8af9] font-bold uppercase tracking-wider">by Renace.tech</span>
+            <span className="font-bold text-sm text-[#e8e8f4] tracking-tight block leading-none">{APP_NAME}</span>
+            <span className="text-[9px] text-[#5b8af9] font-bold uppercase tracking-wider">by {COMPANY_LEGAL}</span>
           </div>
         </div>
 
@@ -226,8 +227,8 @@ export function AppShell({ children, nav }: AppShellProps) {
             <IconPackage size={16} color="#5b8af9" />
           </div>
           <div className="flex-1 flex flex-col leading-none">
-            <span className="font-bold text-sm text-[#e8e8f4]">Envíos App</span>
-            <span className="text-[9px] text-[#5b8af9] font-bold uppercase tracking-wider">by Renace.tech</span>
+            <span className="font-bold text-sm text-[#e8e8f4]">{APP_NAME}</span>
+            <span className="text-[9px] text-[#5b8af9] font-bold uppercase tracking-wider">by {COMPANY_LEGAL}</span>
           </div>
           <button
             onClick={() => setShowProfileModal(true)}

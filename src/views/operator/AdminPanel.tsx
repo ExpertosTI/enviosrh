@@ -415,6 +415,7 @@ export function AdminPanel() {
                 ] as const).map(t => (
                   <button
                     key={t.key}
+                    data-tour={t.key === 'messengers' ? 'admin-messengers' : t.key === 'settings' ? 'admin-settings' : undefined}
                     onClick={() => { setTab(t.key); setSearch(''); }}
                     className={`flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3.5 text-xs font-bold transition-colors border-0 cursor-pointer ${
                       tab === t.key

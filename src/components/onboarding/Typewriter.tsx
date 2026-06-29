@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { AI_NAME } from '../../lib/brand';
 
 interface TypewriterProps {
   text: string;
@@ -75,7 +76,7 @@ export function AiNarration({ subtitle, title, body, accent, stepKey }: AiNarrat
             />
           </div>
           <div>
-            <p className="onboarding-ai-label">Renace AI</p>
+            <p className="onboarding-ai-label">{AI_NAME}</p>
             <p className="onboarding-ai-status">
               {phase === 0 && subtitle ? 'Analizando…' : phase === 1 ? 'Explicando…' : 'Listo ✓'}
             </p>

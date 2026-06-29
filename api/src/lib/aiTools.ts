@@ -2,6 +2,7 @@ import sql from '../db/index.js';
 import type { TokenPayload } from './tokens.js';
 import { assertAllowedToolName, sanitizeToolArgs } from './aiSecurity.js';
 import { EXTENDED_AI_TOOL_DEFINITIONS, executeExtendedAiTool } from './aiToolsExtended.js';
+import { USER_AI_TOOL_DEFINITIONS, executeUserAiTool } from './aiToolsUsers.js';
 
 export interface AiToolContext {
   user: TokenPayload;
@@ -64,7 +65,7 @@ export const AI_TOOL_DEFINITIONS = [
   },
 ] as const;
 
-export const ALL_AI_TOOL_DEFINITIONS = [...AI_TOOL_DEFINITIONS, ...EXTENDED_AI_TOOL_DEFINITIONS];
+export const ALL_AI_TOOL_DEFINITIONS = [...AI_TOOL_DEFINITIONS, ...EXTENDED_AI_TOOL_DEFINITIONS, ...USER_AI_TOOL_DEFINITIONS];
 
 export async function executeAiTool(
   name: string,
@@ -236,6 +237,8 @@ export async function executeAiTool(
     }
 
     default: {
+      const userResult = await executeUserAiTool(name, safeArgs, ctx);
+      if (userResult !== null) return userResult;
       const extended = await executeExtendedAiTool(name, safeArgs, ctx);
       if (extended !== null) return extended;
       return { error: `Herramienta desconocida: ${name}` };

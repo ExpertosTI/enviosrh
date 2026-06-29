@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { AI_NAME } from '../lib/brand';
 
 interface ModelOption {
   id: string;
@@ -164,7 +165,7 @@ export function AiSettings() {
             <span className="text-lg">✦</span> Asistente IA
           </div>
           <p className="text-[10px] text-[#6b6b8a] mt-1">
-            Gemini gratis en AI Studio · 30+ herramientas operativas
+            {AI_NAME} · consultas operativas en tiempo real
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-[#e8e8f4] shrink-0">
@@ -184,15 +185,14 @@ export function AiSettings() {
           value={form.provider}
           onChange={e => setForm({ ...form, provider: e.target.value as 'gemini' | 'openai' })}
         >
-          <option value="gemini">Google Gemini (gratis — AI Studio)</option>
+          <option value="gemini">Google Gemini (AI Studio)</option>
           <option value="openai">OpenAI</option>
         </select>
       </label>
 
       {form.provider === 'gemini' && form.use_env_fallback && !envStatus.gemini && !masked.geminiSet && (
         <p className="text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 leading-relaxed">
-          El servidor <strong>no tiene</strong> GEMINI_API_KEY en el .env. Pega tu key <code className="text-[10px]">AQ.…</code> abajo
-          o en el VPS: <code className="text-[10px]">nano /opt/enviosrh/.env</code> → <code className="text-[10px]">GEMINI_API_KEY=AQ.tu_key</code> → deploy.
+          Configura tu API key de Google AI Studio abajo o contacta al administrador del servidor.
         </p>
       )}
 
@@ -276,16 +276,8 @@ export function AiSettings() {
           checked={form.use_env_fallback}
           onChange={e => setForm({ ...form, use_env_fallback: e.target.checked })}
         />
-        Usar API keys del servidor (.env) si no hay clave del tenant
+        Usar API keys del servidor si no hay clave propia
       </label>
-
-      <p className="text-[10px] text-[#6b6b8a] leading-relaxed">
-        Key gratis:{' '}
-        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-[#5b8af9]">
-          aistudio.google.com/apikey
-        </a>
-        {' '}→ Crear clave → copiar completa (formato AQ.…) → Probar conexión → Guardar.
-      </p>
 
       {msg && (
         <p className={`text-xs leading-relaxed ${

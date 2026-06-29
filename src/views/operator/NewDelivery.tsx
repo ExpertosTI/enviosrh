@@ -1,14 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import type { Messenger } from '../../types';
+import { captureMyLocation } from '../../lib/geolocation';
+import { getSession } from '../../lib/auth';
+import type { Messenger, Tenant } from '../../types';
 import { AppShell, PageHeader } from '../../components/AppShell';
 import { IconMotorbike, IconPackage, IconUser, IconMap } from '../../components/Icons';
 import L from 'leaflet';
 
-// Ubicación de partida de la empresa (Centro de Despacho RH)
-const COMPANY_LAT = 18.5201702;
-const COMPANY_LNG = -70.0261773;
+// Fallback si la empresa aún no tiene GPS configurado
+const DEFAULT_ORIGIN_LAT = 18.5201702;
+const DEFAULT_ORIGIN_LNG = -70.0261773;
 
 interface Form {
   customer_name: string;
@@ -186,6 +188,10 @@ export function NewDelivery() {
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState('');
+  const [capturingGps, setCapturingGps] = useState(false);
+  const [originLabel, setOriginLabel] = useState('Tu empresa');
+
+  const originRef = useRef({ lat: DEFAULT_ORIGIN_LAT, lng: DEFAULT_ORIGIN_LNG });
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -199,6 +205,20 @@ export function NewDelivery() {
 
   useEffect(() => {
     api.get<Messenger[]>('/messengers').then(setMessengers).catch(() => {});
+    const sessionTenant = getSession()?.tenant;
+    if (sessionTenant?.latitude != null && sessionTenant?.longitude != null) {
+      originRef.current = { lat: sessionTenant.latitude, lng: sessionTenant.longitude };
+      setOriginLabel(sessionTenant.name || 'Tu empresa');
+    }
+    api.get<Tenant>('/tenant').then((t) => {
+      if (t.latitude != null && t.longitude != null) {
+        originRef.current = { lat: t.latitude, lng: t.longitude };
+        companyMarkerRef.current?.setLatLng([t.latitude, t.longitude]);
+        mapRef.current?.setView([t.latitude, t.longitude], 12);
+      }
+      setOriginLabel(t.name || 'Tu empresa');
+      companyMarkerRef.current?.setTooltipContent(`📍 ${t.name || 'Despacho'}`);
+    }).catch(() => {});
   }, []);
 
   // Buscar cliente por teléfono
@@ -243,7 +263,7 @@ export function NewDelivery() {
     mapRef.current = L.map(mapContainerRef.current, {
       zoomControl: true,
       attributionControl: false
-    }).setView([COMPANY_LAT, COMPANY_LNG], 12);
+    }).setView([originRef.current.lat, originRef.current.lng], 12);
 
     const isDark = document.documentElement.classList.contains('dark');
     tileLayerRef.current = L.tileLayer(
@@ -261,9 +281,9 @@ export function NewDelivery() {
              </div>`,
       iconSize: [32, 32], iconAnchor: [16, 16]
     });
-    companyMarkerRef.current = L.marker([COMPANY_LAT, COMPANY_LNG], { icon: companyIcon })
+    companyMarkerRef.current = L.marker([originRef.current.lat, originRef.current.lng], { icon: companyIcon })
       .addTo(mapRef.current)
-      .bindTooltip('📍 Centro de Despacho RH', { permanent: false, direction: 'top' });
+      .bindTooltip(`📍 ${originLabel}`, { permanent: false, direction: 'top' });
 
     mapRef.current.on('click', (e: L.LeafletMouseEvent) => {
       const { lat, lng } = e.latlng;
@@ -359,11 +379,12 @@ export function NewDelivery() {
     }
 
     // Calcular distancia
-    const km = haversineKm(COMPANY_LAT, COMPANY_LNG, lat, lng);
+    const { lat: oLat, lng: oLng } = originRef.current;
+    const km = haversineKm(oLat, oLng, lat, lng);
     setDistanceKm(km);
 
     // Trazar ruta OSRM
-    const url = `https://router.project-osrm.org/route/v1/driving/${COMPANY_LNG},${COMPANY_LAT};${lng},${lat}?overview=full&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${oLng},${oLat};${lng},${lat}?overview=full&geometries=geojson`;
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
@@ -379,7 +400,7 @@ export function NewDelivery() {
           const routeKm = data.routes[0].distance / 1000;
           setDistanceKm(routeKm);
         }
-        const bounds = L.latLngBounds([[COMPANY_LAT, COMPANY_LNG], [lat, lng]]);
+        const bounds = L.latLngBounds([[oLat, oLng], [lat, lng]]);
         mapRef.current?.fitBounds(bounds, { padding: [50, 50] });
       })
       .catch(() => {
@@ -388,6 +409,20 @@ export function NewDelivery() {
   }
 
   function set(k: keyof Form, v: string) { setForm((f) => ({ ...f, [k]: v })); }
+
+  async function useMyLocationForDelivery() {
+    setCapturingGps(true);
+    setResolveError('');
+    try {
+      const { lat, lng, link } = await captureMyLocation();
+      await handleLocationChange(link);
+      mapRef.current?.setView([lat, lng], 16);
+    } catch (err) {
+      setResolveError(err instanceof Error ? err.message : 'No se pudo obtener GPS');
+    } finally {
+      setCapturingGps(false);
+    }
+  }
 
   async function handleSaveCustomer() {
     if (!form.customer_phone) return;
@@ -559,18 +594,28 @@ export function NewDelivery() {
 
             {/* Mapa */}
             <div className="md:col-span-2 flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a] flex items-center gap-1.5">
-                <span className="text-[#5b8af9]"><IconMap size={14} /></span>
-                Ubicar en el mapa
-                <span className="font-normal normal-case text-[#3a3a58]">— Clic para colocar pin del cliente</span>
-              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-[#6b6b8a] flex items-center gap-1.5">
+                  <span className="text-[#5b8af9]"><IconMap size={14} /></span>
+                  Ubicar entrega
+                  <span className="font-normal normal-case text-[#3a3a58]">— Clic en mapa o GPS</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={useMyLocationForDelivery}
+                  disabled={capturingGps}
+                  className="btn-secondary text-[10px] px-3 py-1.5"
+                >
+                  {capturingGps ? 'GPS…' : '📍 Mi ubicación'}
+                </button>
+              </div>
               <div ref={mapContainerRef} className="w-full h-[240px] rounded-xl bg-[#0b0b14] overflow-hidden border border-[#252540] z-10" />
 
               {/* Indicador de distancia */}
               {distanceKm !== null && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#5b8af9]/10 border border-[#5b8af9]/20 text-xs font-bold text-[#5b8af9]">
                   <RulerIcon />
-                  Distancia aproximada desde la empresa: <span className="text-white">{distanceKm.toFixed(1)} km</span>
+                  Desde {originLabel}: <span className="text-white">{distanceKm.toFixed(1)} km</span>
                   <span className="text-[#6b6b8a] font-normal">· {(distanceKm / 40 * 60).toFixed(0)} min estimados</span>
                 </div>
               )}
