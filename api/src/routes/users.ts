@@ -116,11 +116,11 @@ users.patch('/profile', auth, async (c) => {
   }
 
   const updates: Record<string, any> = {};
-  if (name !== undefined) updates.name = name.trim();
-  if (phone !== undefined) updates.phone = phone.trim() || null;
-  if (email !== undefined) updates.email = email.trim().toLowerCase();
+  if (name !== undefined && name !== null) updates.name = String(name).trim();
+  if (phone !== undefined) updates.phone = phone == null ? null : String(phone).trim() || null;
+  if (email !== undefined && email !== null) updates.email = String(email).trim().toLowerCase();
   if (avatar_url !== undefined) updates.avatar_url = avatar_url;
-  if (status !== undefined) updates.status = status;
+  if (status !== undefined && status !== null) updates.status = String(status).trim();
 
   if (password) {
     if (password.length < 6) {
@@ -360,10 +360,10 @@ users.patch('/:id', auth, operatorOnly, async (c) => {
   }
 
   const updates: Record<string, any> = {};
-  if (name !== undefined) updates.name = name.trim();
-  if (phone !== undefined) updates.phone = phone.trim() || null;
-  if (email !== undefined) {
-    const emailLower = email.trim().toLowerCase();
+  if (name !== undefined && name !== null) updates.name = String(name).trim();
+  if (phone !== undefined) updates.phone = phone == null ? null : String(phone).trim() || null;
+  if (email !== undefined && email !== null) {
+    const emailLower = String(email).trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(emailLower) && !/^[a-zA-Z0-9_.-]{3,30}$/.test(emailLower)) {
       return c.json({ error: 'El identificador debe ser un correo válido o un nombre de usuario de 3 a 30 caracteres' }, 400);
     }

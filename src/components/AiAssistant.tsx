@@ -4,9 +4,23 @@ import { api } from '../lib/api';
 import { AI_NAME } from '../lib/brand';
 import { connectAiStream, type AiAlertPrefs, type TenantAiEvent } from '../lib/aiStream';
 
+interface AiResultCardField {
+  label: string;
+  value: string;
+  copyable?: boolean;
+  secret?: boolean;
+}
+
+interface AiResultCard {
+  type: string;
+  title: string;
+  fields: AiResultCardField[];
+}
+
 interface Message {
   role: 'user' | 'assistant' | 'alert';
   content: string;
+  cards?: AiResultCard[];
   alert?: TenantAiEvent;
 }
 
@@ -20,8 +34,65 @@ interface Capabilities {
 function formatAiText(text: string): string {
   return text
     .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
     .replace(/^[-•] /gm, '• ')
     .trim();
+}
+
+function CopyChip({ label, value, secret }: { label: string; value: string; secret?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  }
+  return (
+    <div className="ai-copy-chip">
+      <div className="ai-copy-chip-meta">
+        <span className="ai-copy-chip-label">{label}</span>
+        <span className={`ai-copy-chip-value${secret ? ' is-secret' : ''}`}>{value}</span>
+      </div>
+      <button type="button" className="ai-copy-chip-btn" onClick={copy}>
+        {copied ? '✓ Copiado' : 'Copiar'}
+      </button>
+    </div>
+  );
+}
+
+function AiResultCards({ cards }: { cards: AiResultCard[] }) {
+  return (
+    <div className="ai-result-cards">
+      {cards.map((card, i) => (
+        <div key={i} className="ai-result-card">
+          <div className="ai-result-card-title">{card.title}</div>
+          {card.fields.map((f) => (
+            f.copyable && f.value && f.value !== '—'
+              ? <CopyChip key={f.label} label={f.label} value={f.value} secret={f.secret} />
+              : (
+                <div key={f.label} className="ai-copy-chip is-readonly">
+                  <span className="ai-copy-chip-label">{f.label}</span>
+                  <span className="ai-copy-chip-value">{f.value}</span>
+                </div>
+              )
+          ))}
+          {card.fields.some(f => f.secret) && (
+            <button
+              type="button"
+              className="ai-copy-all-btn"
+              onClick={() => {
+                const text = card.fields.map(f => `${f.label}: ${f.value}`).join('\n');
+                navigator.clipboard.writeText(text).catch(() => {});
+              }}
+            >
+              Copiar todos los datos
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function AiAssistant() {
@@ -107,12 +178,12 @@ export function AiAssistant() {
     setLoading(true);
 
     try {
-      const res = await api.post<{ reply: string; conversation_id: string }>('/ai/chat', {
+      const res = await api.post<{ reply: string; conversation_id: string; cards?: AiResultCard[] }>('/ai/chat', {
         message: msg,
         conversation_id: conversationId,
       });
       setConversationId(res.conversation_id);
-      setMessages(m => [...m, { role: 'assistant', content: res.reply }]);
+      setMessages(m => [...m, { role: 'assistant', content: res.reply, cards: res.cards }]);
     } catch (err) {
       const e = err instanceof Error ? err.message : 'Error de conexión';
       setError(e);
@@ -249,6 +320,7 @@ export function AiAssistant() {
                   {m.role !== 'user' && <span className="ai-msg-avatar">{m.role === 'alert' ? '🔔' : '✦'}</span>}
                   <div className="ai-msg-bubble">
                     {m.role === 'assistant' ? formatAiText(m.content) : m.content}
+                    {m.cards && m.cards.length > 0 && <AiResultCards cards={m.cards} />}
                     {m.alert && (
                       <button type="button" className="ai-alert-action" onClick={() => askAboutAlert(m.alert!)}>
                         Analizar con IA →

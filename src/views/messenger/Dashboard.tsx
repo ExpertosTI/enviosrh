@@ -190,12 +190,12 @@ export function MessengerDashboard() {
                 : 'Tu ubicación se comparte automáticamente cuando GPS está activo'}
             </div>
           </div>
-          {(gpsStatus === 'idle' || gpsStatus === 'error') && (
+          {(gpsStatus === 'idle' || gpsStatus === 'error' || gpsStatus === 'denied') && (
             <button
               onClick={requestGps}
               className="bg-[#5b8af9] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg border-0 cursor-pointer shrink-0"
             >
-              Activar
+              {gpsStatus === 'denied' ? 'Reintentar' : 'Activar'}
             </button>
           )}
           {gpsStatus === 'active' && (

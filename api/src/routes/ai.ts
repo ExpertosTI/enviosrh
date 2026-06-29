@@ -452,6 +452,9 @@ ai.delete('/conversations/:id', auth, async (c) => {
 // ── Chat ─────────────────────────────────────────────────────
 ai.post('/chat', auth, async (c) => {
   const user = c.get('user');
+  if (user.role === 'messenger') {
+    return c.json({ error: 'El asistente IA está disponible solo para operadores de la empresa' }, 403);
+  }
 
   const rate = checkAiRateLimit(user.sub);
   if (!rate.ok) {
@@ -500,8 +503,9 @@ ai.post('/chat', auth, async (c) => {
   const tenantName = await getTenantName(user.tenant_id);
 
   let reply: string;
+  let cards: import('../lib/aiCards.js').AiResultCard[] = [];
   try {
-    reply = await runAiChat({
+    const result = await runAiChat({
       config,
       user,
       tenantName,
@@ -510,6 +514,8 @@ ai.post('/chat', auth, async (c) => {
         content: h.content as string,
       })),
     });
+    reply = result.reply;
+    cards = result.cards;
   } catch (err) {
     console.error('[AI Chat]', err);
     const msg = safeAiError(err);
@@ -527,6 +533,7 @@ ai.post('/chat', auth, async (c) => {
   return c.json({
     conversation_id: conversationId,
     reply,
+    cards,
     tools_available: toolsForRole(user.role).map(t => t.name),
   });
 });

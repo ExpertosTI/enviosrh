@@ -416,7 +416,7 @@ export function AppShell({ children, nav }: AppShellProps) {
           </div>
         </div>
       )}
-      {currentUser && (currentUser.role === 'operator' || currentUser.role === 'messenger') && (
+      {currentUser?.role === 'operator' && (
         <AiAssistant />
       )}
     </div>

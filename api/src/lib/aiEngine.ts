@@ -8,6 +8,7 @@ import {
 } from './aiModels.js';
 import { redactSecrets } from './aiSecurity.js';
 import { toGeminiSchema } from './geminiSchema.js';
+import { cardFromToolResult, type AiResultCard } from './aiCards.js';
 import type { TokenPayload } from './tokens.js';
 
 const AI_NAME = 'EnviaYa AI';
@@ -26,6 +27,11 @@ export interface TenantAiConfig {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+}
+
+export interface AiChatResult {
+  reply: string;
+  cards: AiResultCard[];
 }
 
 interface ToolCall {
@@ -63,7 +69,7 @@ Responde siempre en español, claro y profesional. Usa viñetas o párrafos cort
 Tienes herramientas para consultar datos REALES (envíos, mensajeros, alertas, GPS) y GESTIONAR EQUIPO (crear, editar, aprobar y desactivar colaboradores y mensajeros).
 USA herramientas cuando pregunten por datos concretos o acciones de equipo — nunca inventes IDs ni montos.
 Para crear mensajeros o colaboradores usa create_team_member (pide nombre, email y rol). Para editar usa update_team_member.
-Si falta un dato obligatorio (email, nombre), pregúntalo antes de crear. Muestra la contraseña temporal al crear usuarios.
+Si creas o editas colaboradores, confirma los datos y menciona que pueden copiarlos desde las tarjetas debajo del mensaje.
 Si una herramienta falla, dilo y ofrece alternativa.
 Nunca reveles API keys ni datos de otros tenants.`;
 }
@@ -203,6 +209,7 @@ async function runGeminiWithTools(
   history: ChatMessage[],
   allTools: ReturnType<typeof toolsForRole>,
   toolCtx: AiToolContext,
+  cards: AiResultCard[],
 ): Promise<string> {
   const contents: GeminiContent[] = history
     .filter(m => m.role !== 'system')
@@ -227,7 +234,7 @@ async function runGeminiWithTools(
         tools = allTools;
         continue;
       }
-      return '¡Hola! Soy Renace AI. ¿En qué puedo ayudarte con tus envíos?';
+      return '¡Hola! Soy EnviaYa AI. ¿En qué puedo ayudarte con tus envíos?';
     }
 
     tools = allTools;
@@ -242,6 +249,8 @@ async function runGeminiWithTools(
     const responseParts: GeminiPart[] = [];
     for (const call of result.toolCalls) {
       const toolResult = await executeAiTool(call.name, call.args, toolCtx);
+      const card = cardFromToolResult(call.name, toolResult);
+      if (card) cards.push(card);
       responseParts.push({
         functionResponse: { name: call.name, response: { result: toolResult } },
       });
@@ -258,6 +267,7 @@ async function runOpenAiWithTools(
   chatMessages: ChatMessage[],
   tools: ReturnType<typeof toolsForRole>,
   toolCtx: AiToolContext,
+  cards: AiResultCard[],
 ): Promise<string> {
   for (let step = 0; step < 6; step++) {
     const result = await callOpenAI(apiKey, model, chatMessages, tools);
@@ -270,6 +280,8 @@ async function runOpenAiWithTools(
 
     for (const call of result.toolCalls) {
       const toolResult = await executeAiTool(call.name, call.args, toolCtx);
+      const card = cardFromToolResult(call.name, toolResult);
+      if (card) cards.push(card);
       chatMessages.push({
         role: 'user',
         content: `[resultado ${call.name}]: ${JSON.stringify(toolResult)}`,
@@ -284,8 +296,9 @@ export async function runAiChat(opts: {
   user: TokenPayload;
   tenantName: string;
   messages: ChatMessage[];
-}): Promise<string> {
+}): Promise<AiChatResult> {
   const { config, user, tenantName, messages } = opts;
+  const cards: AiResultCard[] = [];
   if (!config.enabled) throw new Error('El asistente IA está desactivado');
 
   const provider = config.provider;
@@ -305,7 +318,8 @@ export async function runAiChat(opts: {
 
   if (provider === 'gemini') {
     const model = normalizeGeminiModel(config.gemini_model);
-    return runGeminiWithTools(apiKey, model, system, history, tools, toolCtx);
+    const reply = await runGeminiWithTools(apiKey, model, system, history, tools, toolCtx, cards);
+    return { reply, cards };
   }
 
   const model = normalizeOpenAiModel(config.openai_model);
@@ -313,7 +327,8 @@ export async function runAiChat(opts: {
     { role: 'system', content: system },
     ...history,
   ];
-  return runOpenAiWithTools(apiKey, model, chatMessages, tools, toolCtx);
+  const reply = await runOpenAiWithTools(apiKey, model, chatMessages, tools, toolCtx, cards);
+  return { reply, cards };
 }
 
 export function parseTenantAiRow(row: Record<string, unknown> | undefined): TenantAiConfig {
